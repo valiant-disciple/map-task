@@ -1,0 +1,33 @@
+:root { --bg:#fff; --fg:#222; --muted:#777; --line:#e5e5e5; --accent:#0b5; }
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: var(--fg); background: var(--bg); }
+.container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; max-width: 480px; }
+.row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.row.right { justify-content: flex-end; }
+label { min-width: 180px; font-weight: 600; }
+input, select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; width: 100%; }
+button { background: var(--accent); color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+button:disabled { opacity: .6; cursor: not-allowed; }
+.toolbar { position: sticky; top: 0; background: #fff; border-bottom: 1px solid var(--line); padding: 8px 12px; display: flex; align-items: center; gap: 12px; z-index: 2; }
+.toolbar .spacer { flex: 1; }
+.panel { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 12px; }
+.map-img { max-width: 100%; border-radius: 6px; }
+
+/* Timer */
+.timer {
+  font-weight: 800;
+  font-size: 36px;
+  padding: 4px 12px;
+  border-radius: 10px;
+  background: #111;
+  color: #fff;
+  min-width: 110px;
+  text-align: center;
+}
+.timer.prestart { background: #d33; }
+
+/* Modal (used by TLX/PSMM) */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.2); display: flex; align-items: center; justify-content: center; }
+.modal { background: #fff; min-width: 420px; max-width: 720px; border-radius: 10px; padding: 16px; border: 1px solid var(--line); }

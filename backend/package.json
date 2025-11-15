@@ -1,0 +1,33 @@
+{
+  "name": "watch-hr-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend API to ingest and serve heart rate data from Galaxy Watch.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "tunnel": "node scripts/tunnel.mjs",
+    "lint": "echo \"(add eslint if desired)\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.7.4",
+    "localtunnel": "^2.0.2",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

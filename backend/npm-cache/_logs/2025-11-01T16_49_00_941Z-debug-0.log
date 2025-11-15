@@ -1,0 +1,543 @@
+0 verbose cli /usr/local/bin/node /usr/local/bin/npm
+1 info using npm@10.9.2
+2 info using node@v22.14.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/kolosus/Documents/DSA/backend/.npmrc
+5 silly config load:file:/Users/kolosus/.npmrc
+6 silly config load:file:/Users/kolosus/.npm-global/etc/npmrc
+7 verbose title npm install localtunnel
+8 verbose argv "install" "localtunnel" "--save-dev" "--cache" "./npm-cache"
+9 verbose logfile logs-max:10 dir:/Users/kolosus/Documents/DSA/backend/npm-cache/_logs/2025-11-01T16_49_00_941Z-
+10 verbose logfile /Users/kolosus/Documents/DSA/backend/npm-cache/_logs/2025-11-01T16_49_00_941Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 silly idealTree buildDeps
+14 silly fetch manifest localtunnel@*
+15 silly packumentCache full:https://registry.npmjs.org/localtunnel cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/localtunnel 6873ms (cache miss)
+17 silly packumentCache full:https://registry.npmjs.org/localtunnel set size:undefined disposed:false
+18 silly placeDep ROOT localtunnel@2.0.2 OK for: watch-hr-backend@1.0.0 want: *
+19 silly fetch manifest axios@0.21.4
+20 silly packumentCache full:https://registry.npmjs.org/axios cache-miss
+21 silly fetch manifest debug@4.3.2
+22 silly packumentCache full:https://registry.npmjs.org/debug cache-miss
+23 silly fetch manifest openurl@1.1.1
+24 silly packumentCache full:https://registry.npmjs.org/openurl cache-miss
+25 silly fetch manifest yargs@17.1.1
+26 silly packumentCache full:https://registry.npmjs.org/yargs cache-miss
+27 http fetch GET 200 https://registry.npmjs.org/axios 715ms (cache miss)
+28 silly packumentCache full:https://registry.npmjs.org/axios set size:undefined disposed:false
+29 http fetch GET 200 https://registry.npmjs.org/debug 5731ms (cache revalidated)
+30 silly packumentCache full:https://registry.npmjs.org/debug set size:195840 disposed:false
+31 http fetch GET 200 https://registry.npmjs.org/openurl 5735ms (cache miss)
+32 silly packumentCache full:https://registry.npmjs.org/openurl set size:undefined disposed:false
+33 http fetch GET 200 https://registry.npmjs.org/yargs 6432ms (cache miss)
+34 silly packumentCache full:https://registry.npmjs.org/yargs set size:undefined disposed:false
+35 silly placeDep ROOT axios@0.21.4 OK for: localtunnel@2.0.2 want: 0.21.4
+36 silly placeDep node_modules/localtunnel debug@4.3.2 OK for: localtunnel@2.0.2 want: 4.3.2
+37 silly placeDep ROOT openurl@1.1.1 OK for: localtunnel@2.0.2 want: 1.1.1
+38 silly placeDep ROOT yargs@17.1.1 OK for: localtunnel@2.0.2 want: 17.1.1
+39 silly fetch manifest follow-redirects@^1.14.0
+40 silly packumentCache full:https://registry.npmjs.org/follow-redirects cache-miss
+41 silly fetch manifest ms@2.1.2
+42 silly packumentCache full:https://registry.npmjs.org/ms cache-miss
+43 silly fetch manifest y18n@^5.0.5
+44 silly packumentCache full:https://registry.npmjs.org/y18n cache-miss
+45 silly fetch manifest cliui@^7.0.2
+46 silly packumentCache full:https://registry.npmjs.org/cliui cache-miss
+47 silly fetch manifest escalade@^3.1.1
+48 silly packumentCache full:https://registry.npmjs.org/escalade cache-miss
+49 silly fetch manifest string-width@^4.2.0
+50 silly packumentCache full:https://registry.npmjs.org/string-width cache-miss
+51 silly fetch manifest yargs-parser@^20.2.2
+52 silly packumentCache full:https://registry.npmjs.org/yargs-parser cache-miss
+53 http fetch GET 200 https://registry.npmjs.org/cliui 830ms (cache miss)
+54 silly packumentCache full:https://registry.npmjs.org/cliui set size:undefined disposed:false
+55 silly fetch manifest get-caller-file@^2.0.5
+56 silly packumentCache full:https://registry.npmjs.org/get-caller-file cache-miss
+57 http fetch GET 200 https://registry.npmjs.org/escalade 1032ms (cache miss)
+58 silly packumentCache full:https://registry.npmjs.org/escalade set size:undefined disposed:false
+59 silly fetch manifest require-directory@^2.1.1
+60 silly packumentCache full:https://registry.npmjs.org/require-directory cache-miss
+61 http fetch GET 200 https://registry.npmjs.org/y18n 1038ms (cache miss)
+62 silly packumentCache full:https://registry.npmjs.org/y18n set size:undefined disposed:false
+63 http fetch GET 200 https://registry.npmjs.org/get-caller-file 661ms (cache miss)
+64 silly packumentCache full:https://registry.npmjs.org/get-caller-file set size:undefined disposed:false
+65 http fetch GET 200 https://registry.npmjs.org/require-directory 642ms (cache miss)
+66 silly packumentCache full:https://registry.npmjs.org/require-directory set size:undefined disposed:false
+67 http fetch GET 200 https://registry.npmjs.org/follow-redirects 3200ms (cache miss)
+68 silly packumentCache full:https://registry.npmjs.org/follow-redirects set size:undefined disposed:false
+69 http fetch GET 200 https://registry.npmjs.org/string-width 5301ms (cache miss)
+70 silly packumentCache full:https://registry.npmjs.org/string-width set size:undefined disposed:false
+71 http fetch GET 200 https://registry.npmjs.org/ms 5316ms (cache revalidated)
+72 silly packumentCache full:https://registry.npmjs.org/ms set size:92208 disposed:false
+73 http fetch GET 200 https://registry.npmjs.org/yargs-parser 5334ms (cache miss)
+74 silly packumentCache full:https://registry.npmjs.org/yargs-parser set size:undefined disposed:false
+75 silly placeDep ROOT follow-redirects@1.15.11 OK for: axios@0.21.4 want: ^1.14.0
+76 silly placeDep ROOT cliui@7.0.4 OK for: yargs@17.1.1 want: ^7.0.2
+77 silly placeDep ROOT escalade@3.2.0 OK for: yargs@17.1.1 want: ^3.1.1
+78 silly placeDep ROOT get-caller-file@2.0.5 OK for: yargs@17.1.1 want: ^2.0.5
+79 silly placeDep ROOT require-directory@2.1.1 OK for: yargs@17.1.1 want: ^2.1.1
+80 silly placeDep ROOT string-width@4.2.3 OK for: yargs@17.1.1 want: ^4.2.0
+81 silly placeDep ROOT y18n@5.0.8 OK for: yargs@17.1.1 want: ^5.0.5
+82 silly placeDep ROOT yargs-parser@20.2.9 OK for: yargs@17.1.1 want: ^20.2.2
+83 silly fetch manifest wrap-ansi@^7.0.0
+84 silly packumentCache full:https://registry.npmjs.org/wrap-ansi cache-miss
+85 silly fetch manifest strip-ansi@^6.0.0
+86 silly packumentCache full:https://registry.npmjs.org/strip-ansi cache-miss
+87 silly fetch manifest strip-ansi@^6.0.1
+88 silly packumentCache full:https://registry.npmjs.org/strip-ansi cache-miss
+89 silly fetch manifest emoji-regex@^8.0.0
+90 silly packumentCache full:https://registry.npmjs.org/emoji-regex cache-miss
+91 silly fetch manifest is-fullwidth-code-point@^3.0.0
+92 silly packumentCache full:https://registry.npmjs.org/is-fullwidth-code-point cache-miss
+93 http fetch GET 200 https://registry.npmjs.org/is-fullwidth-code-point 652ms (cache miss)
+94 silly packumentCache full:https://registry.npmjs.org/is-fullwidth-code-point set size:undefined disposed:false
+95 http fetch GET 200 https://registry.npmjs.org/strip-ansi 653ms (cache miss)
+96 silly packumentCache full:https://registry.npmjs.org/strip-ansi set size:undefined disposed:false
+97 http fetch GET 200 https://registry.npmjs.org/strip-ansi 663ms (cache miss)
+98 silly packumentCache full:https://registry.npmjs.org/strip-ansi set size:undefined disposed:false
+99 http fetch GET 200 https://registry.npmjs.org/emoji-regex 671ms (cache miss)
+100 silly packumentCache full:https://registry.npmjs.org/emoji-regex set size:undefined disposed:false
+101 http fetch GET 200 https://registry.npmjs.org/wrap-ansi 675ms (cache miss)
+102 silly packumentCache full:https://registry.npmjs.org/wrap-ansi set size:undefined disposed:false
+103 silly placeDep ROOT strip-ansi@6.0.1 OK for: cliui@7.0.4 want: ^6.0.0
+104 silly placeDep ROOT wrap-ansi@7.0.0 OK for: cliui@7.0.4 want: ^7.0.0
+105 silly fetch manifest ansi-regex@^5.0.1
+106 silly packumentCache full:https://registry.npmjs.org/ansi-regex cache-miss
+107 silly fetch manifest ansi-styles@^4.0.0
+108 silly packumentCache full:https://registry.npmjs.org/ansi-styles cache-miss
+109 http fetch GET 200 https://registry.npmjs.org/ansi-regex 753ms (cache miss)
+110 silly packumentCache full:https://registry.npmjs.org/ansi-regex set size:undefined disposed:false
+111 http fetch GET 200 https://registry.npmjs.org/ansi-styles 3020ms (cache miss)
+112 silly packumentCache full:https://registry.npmjs.org/ansi-styles set size:undefined disposed:false
+113 silly placeDep ROOT emoji-regex@8.0.0 OK for: string-width@4.2.3 want: ^8.0.0
+114 silly placeDep ROOT is-fullwidth-code-point@3.0.0 OK for: string-width@4.2.3 want: ^3.0.0
+115 silly placeDep ROOT ansi-regex@5.0.1 OK for: strip-ansi@6.0.1 want: ^5.0.1
+116 silly placeDep ROOT ansi-styles@4.3.0 OK for: wrap-ansi@7.0.0 want: ^4.0.0
+117 silly fetch manifest color-convert@^2.0.1
+118 silly packumentCache full:https://registry.npmjs.org/color-convert cache-miss
+119 http fetch GET 200 https://registry.npmjs.org/color-convert 600ms (cache miss)
+120 silly packumentCache full:https://registry.npmjs.org/color-convert set size:undefined disposed:false
+121 silly placeDep ROOT color-convert@2.0.1 OK for: ansi-styles@4.3.0 want: ^2.0.1
+122 silly fetch manifest color-name@~1.1.4
+123 silly packumentCache full:https://registry.npmjs.org/color-name cache-miss
+124 http fetch GET 200 https://registry.npmjs.org/color-name 627ms (cache miss)
+125 silly packumentCache full:https://registry.npmjs.org/color-name set size:undefined disposed:false
+126 silly placeDep ROOT color-name@1.1.4 OK for: color-convert@2.0.1 want: ~1.1.4
+127 silly placeDep node_modules/localtunnel ms@2.1.2 OK for: debug@4.3.2 want: 2.1.2
+128 silly reify moves {}
+129 silly audit bulk request {
+129 silly audit   '@cspotcode/source-map-support': [ '0.8.1' ],
+129 silly audit   '@esbuild/aix-ppc64': [ '0.25.11' ],
+129 silly audit   '@esbuild/android-arm': [ '0.25.11' ],
+129 silly audit   '@esbuild/android-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/android-x64': [ '0.25.11' ],
+129 silly audit   '@esbuild/darwin-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/darwin-x64': [ '0.25.11' ],
+129 silly audit   '@esbuild/freebsd-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/freebsd-x64': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-arm': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-ia32': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-loong64': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-mips64el': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-ppc64': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-riscv64': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-s390x': [ '0.25.11' ],
+129 silly audit   '@esbuild/linux-x64': [ '0.25.11' ],
+129 silly audit   '@esbuild/netbsd-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/netbsd-x64': [ '0.25.11' ],
+129 silly audit   '@esbuild/openbsd-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/openbsd-x64': [ '0.25.11' ],
+129 silly audit   '@esbuild/openharmony-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/sunos-x64': [ '0.25.11' ],
+129 silly audit   '@esbuild/win32-arm64': [ '0.25.11' ],
+129 silly audit   '@esbuild/win32-ia32': [ '0.25.11' ],
+129 silly audit   '@esbuild/win32-x64': [ '0.25.11' ],
+129 silly audit   '@jridgewell/resolve-uri': [ '3.1.2' ],
+129 silly audit   '@jridgewell/sourcemap-codec': [ '1.5.5' ],
+129 silly audit   '@jridgewell/trace-mapping': [ '0.3.9' ],
+129 silly audit   '@tsconfig/node10': [ '1.0.11' ],
+129 silly audit   '@tsconfig/node12': [ '1.0.11' ],
+129 silly audit   '@tsconfig/node14': [ '1.0.3' ],
+129 silly audit   '@tsconfig/node16': [ '1.0.4' ],
+129 silly audit   '@types/body-parser': [ '1.19.6' ],
+129 silly audit   '@types/connect': [ '3.4.38' ],
+129 silly audit   '@types/cors': [ '2.8.19' ],
+129 silly audit   '@types/express': [ '4.17.25' ],
+129 silly audit   '@types/express-serve-static-core': [ '4.19.7' ],
+129 silly audit   '@types/http-errors': [ '2.0.5' ],
+129 silly audit   '@types/mime': [ '1.3.5' ],
+129 silly audit   '@types/node': [ '22.18.13' ],
+129 silly audit   '@types/qs': [ '6.14.0' ],
+129 silly audit   '@types/range-parser': [ '1.2.7' ],
+129 silly audit   '@types/send': [ '1.2.1', '0.17.6' ],
+129 silly audit   '@types/serve-static': [ '1.15.10' ],
+129 silly audit   accepts: [ '1.3.8' ],
+129 silly audit   acorn: [ '8.15.0' ],
+129 silly audit   'acorn-walk': [ '8.3.4' ],
+129 silly audit   arg: [ '4.1.3' ],
+129 silly audit   'array-flatten': [ '1.1.1' ],
+129 silly audit   'body-parser': [ '1.20.3' ],
+129 silly audit   bytes: [ '3.1.2' ],
+129 silly audit   'call-bind-apply-helpers': [ '1.0.2' ],
+129 silly audit   'call-bound': [ '1.0.4' ],
+129 silly audit   'content-disposition': [ '0.5.4' ],
+129 silly audit   'content-type': [ '1.0.5' ],
+129 silly audit   cookie: [ '0.7.1' ],
+129 silly audit   'cookie-signature': [ '1.0.6' ],
+129 silly audit   cors: [ '2.8.5' ],
+129 silly audit   'create-require': [ '1.1.1' ],
+129 silly audit   debug: [ '2.6.9', '4.3.2' ],
+129 silly audit   depd: [ '2.0.0' ],
+129 silly audit   destroy: [ '1.2.0' ],
+129 silly audit   diff: [ '4.0.2' ],
+129 silly audit   dotenv: [ '16.6.1' ],
+129 silly audit   'dunder-proto': [ '1.0.1' ],
+129 silly audit   'ee-first': [ '1.1.1' ],
+129 silly audit   encodeurl: [ '2.0.0', '1.0.2' ],
+129 silly audit   'es-define-property': [ '1.0.1' ],
+129 silly audit   'es-errors': [ '1.3.0' ],
+129 silly audit   'es-object-atoms': [ '1.1.1' ],
+129 silly audit   esbuild: [ '0.25.11' ],
+129 silly audit   'escape-html': [ '1.0.3' ],
+129 silly audit   etag: [ '1.8.1' ],
+129 silly audit   express: [ '4.21.2' ],
+129 silly audit   finalhandler: [ '1.3.1' ],
+129 silly audit   forwarded: [ '0.2.0' ],
+129 silly audit   fresh: [ '0.5.2' ],
+129 silly audit   fsevents: [ '2.3.3' ],
+129 silly audit   'function-bind': [ '1.1.2' ],
+129 silly audit   'get-intrinsic': [ '1.3.0' ],
+129 silly audit   'get-proto': [ '1.0.1' ],
+129 silly audit   'get-tsconfig': [ '4.13.0' ],
+129 silly audit   gopd: [ '1.2.0' ],
+129 silly audit   'has-symbols': [ '1.1.0' ],
+129 silly audit   hasown: [ '2.0.2' ],
+129 silly audit   'http-errors': [ '2.0.0' ],
+129 silly audit   'iconv-lite': [ '0.4.24' ],
+129 silly audit   inherits: [ '2.0.4' ],
+129 silly audit   'ipaddr.js': [ '1.9.1' ],
+129 silly audit   'make-error': [ '1.3.6' ],
+129 silly audit   'math-intrinsics': [ '1.1.0' ],
+129 silly audit   'media-typer': [ '0.3.0' ],
+129 silly audit   'merge-descriptors': [ '1.0.3' ],
+129 silly audit   methods: [ '1.1.2' ],
+129 silly audit   mime: [ '1.6.0' ],
+129 silly audit   'mime-db': [ '1.52.0' ],
+129 silly audit   'mime-types': [ '2.1.35' ],
+129 silly audit   ms: [ '2.0.0', '2.1.3', '2.1.2' ],
+129 silly audit   negotiator: [ '0.6.3' ],
+129 silly audit   'object-assign': [ '4.1.1' ],
+129 silly audit   'object-inspect': [ '1.13.4' ],
+129 silly audit   'on-finished': [ '2.4.1' ],
+129 silly audit   parseurl: [ '1.3.3' ],
+129 silly audit   'path-to-regexp': [ '0.1.12' ],
+129 silly audit   'proxy-addr': [ '2.0.7' ],
+129 silly audit   qs: [ '6.13.0' ],
+129 silly audit   'range-parser': [ '1.2.1' ],
+129 silly audit   'raw-body': [ '2.5.2' ],
+129 silly audit   'resolve-pkg-maps': [ '1.0.0' ],
+129 silly audit   'safe-buffer': [ '5.2.1' ],
+129 silly audit   'safer-buffer': [ '2.1.2' ],
+129 silly audit   send: [ '0.19.0' ],
+129 silly audit   'serve-static': [ '1.16.2' ],
+129 silly audit   setprototypeof: [ '1.2.0' ],
+129 silly audit   'side-channel': [ '1.1.0' ],
+129 silly audit   'side-channel-list': [ '1.0.0' ],
+129 silly audit   'side-channel-map': [ '1.0.1' ],
+129 silly audit   'side-channel-weakmap': [ '1.0.2' ],
+129 silly audit   statuses: [ '2.0.1' ],
+129 silly audit   toidentifier: [ '1.0.1' ],
+129 silly audit   'ts-node': [ '10.9.2' ],
+129 silly audit   tsx: [ '4.20.6' ],
+129 silly audit   'type-is': [ '1.6.18' ],
+129 silly audit   typescript: [ '5.9.3' ],
+129 silly audit   'undici-types': [ '6.21.0' ],
+129 silly audit   unpipe: [ '1.0.0' ],
+129 silly audit   'utils-merge': [ '1.0.1' ],
+129 silly audit   'v8-compile-cache-lib': [ '3.0.1' ],
+129 silly audit   vary: [ '1.1.2' ],
+129 silly audit   yn: [ '3.1.1' ],
+129 silly audit   zod: [ '3.25.76' ],
+129 silly audit   localtunnel: [ '2.0.2' ],
+129 silly audit   axios: [ '0.21.4' ],
+129 silly audit   openurl: [ '1.1.1' ],
+129 silly audit   yargs: [ '17.1.1' ],
+129 silly audit   'follow-redirects': [ '1.15.11' ],
+129 silly audit   cliui: [ '7.0.4' ],
+129 silly audit   escalade: [ '3.2.0' ],
+129 silly audit   'get-caller-file': [ '2.0.5' ],
+129 silly audit   'require-directory': [ '2.1.1' ],
+129 silly audit   'string-width': [ '4.2.3' ],
+129 silly audit   y18n: [ '5.0.8' ],
+129 silly audit   'yargs-parser': [ '20.2.9' ],
+129 silly audit   'strip-ansi': [ '6.0.1' ],
+129 silly audit   'wrap-ansi': [ '7.0.0' ],
+129 silly audit   'emoji-regex': [ '8.0.0' ],
+129 silly audit   'is-fullwidth-code-point': [ '3.0.0' ],
+129 silly audit   'ansi-regex': [ '5.0.1' ],
+129 silly audit   'ansi-styles': [ '4.3.0' ],
+129 silly audit   'color-convert': [ '2.0.1' ],
+129 silly audit   'color-name': [ '1.1.4' ]
+129 silly audit }
+130 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/win32-x64
+131 silly reify mark deleted [
+131 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/win32-x64'
+131 silly reify ]
+132 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/win32-ia32
+133 silly reify mark deleted [
+133 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/win32-ia32'
+133 silly reify ]
+134 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/win32-arm64
+135 silly reify mark deleted [
+135 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/win32-arm64'
+135 silly reify ]
+136 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/sunos-x64
+137 silly reify mark deleted [
+137 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/sunos-x64'
+137 silly reify ]
+138 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/openharmony-arm64
+139 silly reify mark deleted [
+139 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/openharmony-arm64'
+139 silly reify ]
+140 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/openbsd-x64
+141 silly reify mark deleted [
+141 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/openbsd-x64'
+141 silly reify ]
+142 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/openbsd-arm64
+143 silly reify mark deleted [
+143 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/openbsd-arm64'
+143 silly reify ]
+144 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/netbsd-x64
+145 silly reify mark deleted [
+145 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/netbsd-x64'
+145 silly reify ]
+146 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/netbsd-arm64
+147 silly reify mark deleted [
+147 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/netbsd-arm64'
+147 silly reify ]
+148 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-x64
+149 silly reify mark deleted [
+149 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-x64'
+149 silly reify ]
+150 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-s390x
+151 silly reify mark deleted [
+151 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-s390x'
+151 silly reify ]
+152 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-riscv64
+153 silly reify mark deleted [
+153 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-riscv64'
+153 silly reify ]
+154 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-ppc64
+155 silly reify mark deleted [
+155 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-ppc64'
+155 silly reify ]
+156 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-mips64el
+157 silly reify mark deleted [
+157 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-mips64el'
+157 silly reify ]
+158 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-loong64
+159 silly reify mark deleted [
+159 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-loong64'
+159 silly reify ]
+160 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-ia32
+161 silly reify mark deleted [
+161 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-ia32'
+161 silly reify ]
+162 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-arm64
+163 silly reify mark deleted [
+163 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-arm64'
+163 silly reify ]
+164 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-arm
+165 silly reify mark deleted [
+165 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/linux-arm'
+165 silly reify ]
+166 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/freebsd-x64
+167 silly reify mark deleted [
+167 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/freebsd-x64'
+167 silly reify ]
+168 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/freebsd-arm64
+169 silly reify mark deleted [
+169 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/freebsd-arm64'
+169 silly reify ]
+170 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/darwin-x64
+171 silly reify mark deleted [
+171 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/darwin-x64'
+171 silly reify ]
+172 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/android-x64
+173 silly reify mark deleted [
+173 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/android-x64'
+173 silly reify ]
+174 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/android-arm64
+175 silly reify mark deleted [
+175 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/android-arm64'
+175 silly reify ]
+176 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/android-arm
+177 silly reify mark deleted [
+177 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/android-arm'
+177 silly reify ]
+178 verbose reify failed optional dependency /Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/aix-ppc64
+179 silly reify mark deleted [
+179 silly reify   '/Users/kolosus/Documents/DSA/backend/node_modules/@esbuild/aix-ppc64'
+179 silly reify ]
+180 http cache color-name@https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz 0ms (cache hit)
+181 http cache color-convert@https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz 0ms (cache hit)
+182 http cache ansi-regex@https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz 0ms (cache hit)
+183 http cache is-fullwidth-code-point@https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-3.0.0.tgz 0ms (cache hit)
+184 http cache emoji-regex@https://registry.npmjs.org/emoji-regex/-/emoji-regex-8.0.0.tgz 0ms (cache hit)
+185 http cache wrap-ansi@https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-7.0.0.tgz 0ms (cache hit)
+186 http cache strip-ansi@https://registry.npmjs.org/strip-ansi/-/strip-ansi-6.0.1.tgz 0ms (cache hit)
+187 http cache yargs-parser@https://registry.npmjs.org/yargs-parser/-/yargs-parser-20.2.9.tgz 0ms (cache hit)
+188 http cache string-width@https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz 0ms (cache hit)
+189 http cache y18n@https://registry.npmjs.org/y18n/-/y18n-5.0.8.tgz 0ms (cache hit)
+190 http cache require-directory@https://registry.npmjs.org/require-directory/-/require-directory-2.1.1.tgz 0ms (cache hit)
+191 http cache get-caller-file@https://registry.npmjs.org/get-caller-file/-/get-caller-file-2.0.5.tgz 0ms (cache hit)
+192 http cache escalade@https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz 0ms (cache hit)
+193 http cache cliui@https://registry.npmjs.org/cliui/-/cliui-7.0.4.tgz 0ms (cache hit)
+194 http cache follow-redirects@https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.15.11.tgz 0ms (cache hit)
+195 http cache yargs@https://registry.npmjs.org/yargs/-/yargs-17.1.1.tgz 0ms (cache hit)
+196 http cache openurl@https://registry.npmjs.org/openurl/-/openurl-1.1.1.tgz 0ms (cache hit)
+197 http cache axios@https://registry.npmjs.org/axios/-/axios-0.21.4.tgz 0ms (cache hit)
+198 http cache localtunnel@https://registry.npmjs.org/localtunnel/-/localtunnel-2.0.2.tgz 0ms (cache hit)
+199 http cache fsevents@https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz 0ms (cache hit)
+200 http cache debug@https://registry.npmjs.org/debug/-/debug-4.3.2.tgz 0ms (cache hit)
+201 http cache ms@https://registry.npmjs.org/ms/-/ms-2.1.2.tgz 0ms (cache hit)
+202 http cache ansi-styles@https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz 0ms (cache hit)
+203 silly tarball no local data for color-name@https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz. Extracting by manifest.
+204 silly tarball no local data for color-convert@https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz. Extracting by manifest.
+205 silly tarball no local data for is-fullwidth-code-point@https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-3.0.0.tgz. Extracting by manifest.
+206 silly tarball no local data for ansi-regex@https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz. Extracting by manifest.
+207 silly tarball no local data for strip-ansi@https://registry.npmjs.org/strip-ansi/-/strip-ansi-6.0.1.tgz. Extracting by manifest.
+208 silly tarball no local data for yargs-parser@https://registry.npmjs.org/yargs-parser/-/yargs-parser-20.2.9.tgz. Extracting by manifest.
+209 silly tarball no local data for emoji-regex@https://registry.npmjs.org/emoji-regex/-/emoji-regex-8.0.0.tgz. Extracting by manifest.
+210 silly tarball no local data for wrap-ansi@https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-7.0.0.tgz. Extracting by manifest.
+211 silly tarball no local data for string-width@https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz. Extracting by manifest.
+212 silly tarball no local data for require-directory@https://registry.npmjs.org/require-directory/-/require-directory-2.1.1.tgz. Extracting by manifest.
+213 silly tarball no local data for y18n@https://registry.npmjs.org/y18n/-/y18n-5.0.8.tgz. Extracting by manifest.
+214 silly tarball no local data for escalade@https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz. Extracting by manifest.
+215 silly tarball no local data for cliui@https://registry.npmjs.org/cliui/-/cliui-7.0.4.tgz. Extracting by manifest.
+216 silly tarball no local data for get-caller-file@https://registry.npmjs.org/get-caller-file/-/get-caller-file-2.0.5.tgz. Extracting by manifest.
+217 silly tarball no local data for follow-redirects@https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.15.11.tgz. Extracting by manifest.
+218 silly tarball no local data for openurl@https://registry.npmjs.org/openurl/-/openurl-1.1.1.tgz. Extracting by manifest.
+219 silly tarball no local data for yargs@https://registry.npmjs.org/yargs/-/yargs-17.1.1.tgz. Extracting by manifest.
+220 silly tarball no local data for localtunnel@https://registry.npmjs.org/localtunnel/-/localtunnel-2.0.2.tgz. Extracting by manifest.
+221 silly tarball no local data for axios@https://registry.npmjs.org/axios/-/axios-0.21.4.tgz. Extracting by manifest.
+222 silly tarball no local data for ansi-styles@https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz. Extracting by manifest.
+223 silly tarball no local data for debug@https://registry.npmjs.org/debug/-/debug-4.3.2.tgz. Extracting by manifest.
+224 silly tarball no local data for ms@https://registry.npmjs.org/ms/-/ms-2.1.2.tgz. Extracting by manifest.
+225 http fetch GET 200 https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz 668ms (cache miss)
+226 http fetch GET 200 https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-3.0.0.tgz 668ms (cache miss)
+227 http fetch GET 200 https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz 674ms (cache miss)
+228 http fetch GET 200 https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz 674ms (cache miss)
+229 http fetch GET 200 https://registry.npmjs.org/yargs-parser/-/yargs-parser-20.2.9.tgz 674ms (cache miss)
+230 http fetch GET 200 https://registry.npmjs.org/strip-ansi/-/strip-ansi-6.0.1.tgz 677ms (cache miss)
+231 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 928ms
+232 silly audit report {
+232 silly audit report   axios: [
+232 silly audit report     {
+232 silly audit report       id: 1103617,
+232 silly audit report       url: 'https://github.com/advisories/GHSA-jr5f-v2jv-69x6',
+232 silly audit report       title: 'axios Requests Vulnerable To Possible SSRF and Credential Leakage via Absolute URL',
+232 silly audit report       severity: 'high',
+232 silly audit report       vulnerable_versions: '<0.30.0',
+232 silly audit report       cwe: [Array],
+232 silly audit report       cvss: [Object]
+232 silly audit report     },
+232 silly audit report     {
+232 silly audit report       id: 1108262,
+232 silly audit report       url: 'https://github.com/advisories/GHSA-4hjh-wcwx-xvwj',
+232 silly audit report       title: 'Axios is vulnerable to DoS attack through lack of data size check',
+232 silly audit report       severity: 'high',
+232 silly audit report       vulnerable_versions: '<0.30.2',
+232 silly audit report       cwe: [Array],
+232 silly audit report       cvss: [Object]
+232 silly audit report     },
+232 silly audit report     {
+232 silly audit report       id: 1097679,
+232 silly audit report       url: 'https://github.com/advisories/GHSA-wf5p-g6vw-rhxx',
+232 silly audit report       title: 'Axios Cross-Site Request Forgery Vulnerability',
+232 silly audit report       severity: 'moderate',
+232 silly audit report       vulnerable_versions: '>=0.8.1 <0.28.0',
+232 silly audit report       cwe: [Array],
+232 silly audit report       cvss: [Object]
+232 silly audit report     }
+232 silly audit report   ]
+232 silly audit report }
+233 silly packumentCache corgi:https://registry.npmjs.org/axios cache-miss
+234 http fetch GET 200 https://registry.npmjs.org/openurl/-/openurl-1.1.1.tgz 1337ms (cache miss)
+235 http fetch GET 200 https://registry.npmjs.org/localtunnel/-/localtunnel-2.0.2.tgz 1341ms (cache miss)
+236 http fetch GET 200 https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.15.11.tgz 1342ms (cache miss)
+237 http fetch GET 200 https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz 1341ms (cache miss)
+238 http fetch GET 200 https://registry.npmjs.org/yargs/-/yargs-17.1.1.tgz 1369ms (cache miss)
+239 http fetch GET 200 https://registry.npmjs.org/axios/-/axios-0.21.4.tgz 1374ms (cache miss)
+240 http fetch GET 200 https://registry.npmjs.org/debug/-/debug-4.3.2.tgz 1555ms (cache miss)
+241 http fetch GET 200 https://registry.npmjs.org/ms/-/ms-2.1.2.tgz 1944ms (cache miss)
+242 http fetch GET 200 https://registry.npmjs.org/axios 1074ms (cache miss)
+243 silly packumentCache corgi:https://registry.npmjs.org/axios set size:undefined disposed:false
+244 silly packumentCache corgi:https://registry.npmjs.org/localtunnel cache-miss
+245 http fetch GET 200 https://registry.npmjs.org/localtunnel 639ms (cache miss)
+246 silly packumentCache corgi:https://registry.npmjs.org/localtunnel set size:undefined disposed:false
+247 http fetch GET 200 https://registry.npmjs.org/emoji-regex/-/emoji-regex-8.0.0.tgz 5285ms (cache miss)
+248 http fetch GET 200 https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-7.0.0.tgz 5292ms (cache miss)
+249 http fetch GET 200 https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz 5521ms (cache miss)
+250 http fetch GET 200 https://registry.npmjs.org/get-caller-file/-/get-caller-file-2.0.5.tgz 5523ms (cache miss)
+251 http fetch GET 200 https://registry.npmjs.org/cliui/-/cliui-7.0.4.tgz 5523ms (cache miss)
+252 http fetch GET 200 https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz 5557ms (cache miss)
+253 http fetch GET 200 https://registry.npmjs.org/require-directory/-/require-directory-2.1.1.tgz 6600ms (cache miss)
+254 http fetch GET 200 https://registry.npmjs.org/y18n/-/y18n-5.0.8.tgz 7958ms (cache miss)
+255 silly ADD node_modules/color-name
+256 silly ADD node_modules/color-convert
+257 silly ADD node_modules/ansi-styles
+258 silly ADD node_modules/ansi-regex
+259 silly ADD node_modules/is-fullwidth-code-point
+260 silly ADD node_modules/emoji-regex
+261 silly ADD node_modules/wrap-ansi
+262 silly ADD node_modules/strip-ansi
+263 silly ADD node_modules/yargs-parser
+264 silly ADD node_modules/y18n
+265 silly ADD node_modules/string-width
+266 silly ADD node_modules/require-directory
+267 silly ADD node_modules/get-caller-file
+268 silly ADD node_modules/escalade
+269 silly ADD node_modules/cliui
+270 silly ADD node_modules/follow-redirects
+271 silly ADD node_modules/yargs
+272 silly ADD node_modules/openurl
+273 silly ADD node_modules/axios
+274 silly ADD node_modules/localtunnel
+275 silly ADD node_modules/localtunnel/node_modules/ms
+276 silly ADD node_modules/localtunnel/node_modules/debug
+277 silly ADD node_modules/fsevents
+278 silly ADD
+279 silly ADD
+280 silly ADD
+281 silly ADD
+282 silly ADD
+283 silly ADD
+284 silly ADD
+285 silly ADD
+286 silly ADD
+287 silly ADD
+288 silly ADD
+289 silly ADD
+290 silly ADD
+291 silly ADD
+292 silly ADD
+293 silly ADD
+294 silly ADD
+295 silly ADD
+296 silly ADD
+297 silly ADD
+298 silly ADD
+299 silly ADD
+300 silly ADD
+301 silly ADD
+302 silly ADD
+303 verbose cwd /Users/kolosus/Documents/DSA/backend
+304 verbose os Darwin 24.6.0
+305 verbose node v22.14.0
+306 verbose npm  v10.9.2
+307 verbose exit 0
+308 info ok

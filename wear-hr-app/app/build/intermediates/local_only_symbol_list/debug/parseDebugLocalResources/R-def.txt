@@ -1,0 +1,14 @@
+R_DEF: Internal format may change without notice
+local
+id btnStart
+id btnStop
+id txtHr
+id txtStatus
+id txtTs
+layout activity_main
+string app_name
+string btn_start
+string btn_stop
+string label_hr
+string label_status
+string label_ts

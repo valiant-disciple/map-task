@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wear HR</string>
+    <string name="btn_start">Start</string>
+    <string name="btn_stop">Stop</string>
+    <string name="label_hr">HR:</string>
+    <string name="label_status">Status:</string>
+    <string name="label_ts">TS:</string>
+</resources>

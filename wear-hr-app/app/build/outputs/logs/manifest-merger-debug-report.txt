@@ -1,0 +1,210 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:2:1-26:12
+INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:2:1-26:12
+INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:2:1-26:12
+INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:2:1-26:12
+MERGED from [androidx.activity:activity:1.9.2] /Users/kolosus/.gradle/caches/transforms-4/394e331792603b51d6e81ecbe94effce/transformed/jetified-activity-1.9.2/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.activity:activity-ktx:1.9.2] /Users/kolosus/.gradle/caches/transforms-4/0f0766163ca4b2d5d252fb5389ff0330/transformed/jetified-activity-ktx-1.9.2/AndroidManifest.xml:2:1-7:12
+MERGED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:17:1-30:12
+MERGED from [androidx.savedstate:savedstate-ktx:1.2.1] /Users/kolosus/.gradle/caches/transforms-4/629317ab0346dcb34becbb34ae435564/transformed/jetified-savedstate-ktx-1.2.1/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.savedstate:savedstate:1.2.1] /Users/kolosus/.gradle/caches/transforms-4/6eee158dc5aa0a416cb6a30a0b8875aa/transformed/jetified-savedstate-1.2.1/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.lifecycle:lifecycle-livedata-core:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/58be63c1d353ab9b713d8c655e4f9f94/transformed/lifecycle-livedata-core-2.8.6/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/8d3f2bc3706f410d008859c21fa516c9/transformed/jetified-lifecycle-viewmodel-release/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.lifecycle:lifecycle-runtime-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/29da75351e3116f37b1f100eba045f80/transformed/jetified-lifecycle-runtime-release/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/582c3253941c908978b991c0617da4b4/transformed/jetified-lifecycle-viewmodel-ktx-2.8.6/AndroidManifest.xml:2:1-7:12
+MERGED from [androidx.lifecycle:lifecycle-runtime-ktx-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/4d4822ad104cc9b1ee4bf7022f5b69d3/transformed/jetified-lifecycle-runtime-ktx-release/AndroidManifest.xml:2:1-7:12
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/d0ae116cffdaf5936ee17391192417f0/transformed/jetified-lifecycle-viewmodel-savedstate-2.8.6/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.core:core-ktx:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/a1a3a423b6199b27b869af391a485b15/transformed/jetified-core-ktx-1.13.1/AndroidManifest.xml:2:1-7:12
+MERGED from [androidx.annotation:annotation-experimental:1.4.0] /Users/kolosus/.gradle/caches/transforms-4/8db07335e3ae42838c8bbffe9133c2d2/transformed/jetified-annotation-experimental-1.4.0/AndroidManifest.xml:2:1-7:12
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/b545a45b5c6859661283c18d0d24b5c6/transformed/versionedparcelable-1.1.1/AndroidManifest.xml:17:1-27:12
+MERGED from [androidx.interpolator:interpolator:1.0.0] /Users/kolosus/.gradle/caches/transforms-4/646a31fa03018ac34e7a59518e3ac04e/transformed/interpolator-1.0.0/AndroidManifest.xml:17:1-22:12
+MERGED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:17:1-55:12
+MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:17:1-33:12
+MERGED from [androidx.tracing:tracing:1.0.0] /Users/kolosus/.gradle/caches/transforms-4/dc2b05fe3dc8129e502260d894229131/transformed/jetified-tracing-1.0.0/AndroidManifest.xml:17:1-24:12
+MERGED from [androidx.arch.core:core-runtime:2.2.0] /Users/kolosus/.gradle/caches/transforms-4/80d0a0599fa68d9df3cfaaa481633dd3/transformed/core-runtime-2.2.0/AndroidManifest.xml:17:1-22:12
+	package
+		INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+	android:versionName
+		INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+	android:versionCode
+		INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:2:11-69
+uses-feature#android.hardware.type.watch
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:4:5-64
+	android:name
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:4:19-61
+uses-feature#android.hardware.sensor.heartrate
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:5:5-95
+	android:required
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:5:68-92
+	android:name
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:5:19-67
+uses-permission#android.permission.BODY_SENSORS
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:7:5-71
+	android:name
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:7:22-68
+uses-permission#android.permission.INTERNET
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:8:5-67
+	android:name
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:8:22-64
+application
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:10:5-25:19
+INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:10:5-25:19
+MERGED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:28:5-89
+MERGED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:28:5-89
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/b545a45b5c6859661283c18d0d24b5c6/transformed/versionedparcelable-1.1.1/AndroidManifest.xml:24:5-25:19
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/b545a45b5c6859661283c18d0d24b5c6/transformed/versionedparcelable-1.1.1/AndroidManifest.xml:24:5-25:19
+MERGED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:23:5-53:19
+MERGED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:23:5-53:19
+MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:25:5-31:19
+MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:25:5-31:19
+	android:extractNativeLibs
+		INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+	android:appComponentFactory
+		ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:28:18-86
+	android:label
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:12:5-28
+	android:icon
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:13:5-54
+	android:allowBackup
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:11:5-32
+	android:usesCleartextTraffic
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:14:5-40
+activity#com.example.wearhr.MainActivity
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:16:9-23:20
+	android:exported
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:18:13-36
+	android:name
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:17:13-41
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:19:13-22:29
+action#android.intent.action.MAIN
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:20:17-69
+	android:name
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:20:25-66
+category#android.intent.category.LAUNCHER
+ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:21:17-77
+	android:name
+		ADDED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml:21:27-74
+uses-sdk
+INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+MERGED from [androidx.activity:activity:1.9.2] /Users/kolosus/.gradle/caches/transforms-4/394e331792603b51d6e81ecbe94effce/transformed/jetified-activity-1.9.2/AndroidManifest.xml:20:5-44
+MERGED from [androidx.activity:activity:1.9.2] /Users/kolosus/.gradle/caches/transforms-4/394e331792603b51d6e81ecbe94effce/transformed/jetified-activity-1.9.2/AndroidManifest.xml:20:5-44
+MERGED from [androidx.activity:activity-ktx:1.9.2] /Users/kolosus/.gradle/caches/transforms-4/0f0766163ca4b2d5d252fb5389ff0330/transformed/jetified-activity-ktx-1.9.2/AndroidManifest.xml:5:5-44
+MERGED from [androidx.activity:activity-ktx:1.9.2] /Users/kolosus/.gradle/caches/transforms-4/0f0766163ca4b2d5d252fb5389ff0330/transformed/jetified-activity-ktx-1.9.2/AndroidManifest.xml:5:5-44
+MERGED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:20:5-44
+MERGED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:20:5-44
+MERGED from [androidx.savedstate:savedstate-ktx:1.2.1] /Users/kolosus/.gradle/caches/transforms-4/629317ab0346dcb34becbb34ae435564/transformed/jetified-savedstate-ktx-1.2.1/AndroidManifest.xml:20:5-44
+MERGED from [androidx.savedstate:savedstate-ktx:1.2.1] /Users/kolosus/.gradle/caches/transforms-4/629317ab0346dcb34becbb34ae435564/transformed/jetified-savedstate-ktx-1.2.1/AndroidManifest.xml:20:5-44
+MERGED from [androidx.savedstate:savedstate:1.2.1] /Users/kolosus/.gradle/caches/transforms-4/6eee158dc5aa0a416cb6a30a0b8875aa/transformed/jetified-savedstate-1.2.1/AndroidManifest.xml:20:5-44
+MERGED from [androidx.savedstate:savedstate:1.2.1] /Users/kolosus/.gradle/caches/transforms-4/6eee158dc5aa0a416cb6a30a0b8875aa/transformed/jetified-savedstate-1.2.1/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-livedata-core:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/58be63c1d353ab9b713d8c655e4f9f94/transformed/lifecycle-livedata-core-2.8.6/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-livedata-core:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/58be63c1d353ab9b713d8c655e4f9f94/transformed/lifecycle-livedata-core-2.8.6/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/8d3f2bc3706f410d008859c21fa516c9/transformed/jetified-lifecycle-viewmodel-release/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/8d3f2bc3706f410d008859c21fa516c9/transformed/jetified-lifecycle-viewmodel-release/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/29da75351e3116f37b1f100eba045f80/transformed/jetified-lifecycle-runtime-release/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/29da75351e3116f37b1f100eba045f80/transformed/jetified-lifecycle-runtime-release/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/582c3253941c908978b991c0617da4b4/transformed/jetified-lifecycle-viewmodel-ktx-2.8.6/AndroidManifest.xml:5:5-44
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/582c3253941c908978b991c0617da4b4/transformed/jetified-lifecycle-viewmodel-ktx-2.8.6/AndroidManifest.xml:5:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime-ktx-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/4d4822ad104cc9b1ee4bf7022f5b69d3/transformed/jetified-lifecycle-runtime-ktx-release/AndroidManifest.xml:5:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime-ktx-android:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/4d4822ad104cc9b1ee4bf7022f5b69d3/transformed/jetified-lifecycle-runtime-ktx-release/AndroidManifest.xml:5:5-44
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/d0ae116cffdaf5936ee17391192417f0/transformed/jetified-lifecycle-viewmodel-savedstate-2.8.6/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.6] /Users/kolosus/.gradle/caches/transforms-4/d0ae116cffdaf5936ee17391192417f0/transformed/jetified-lifecycle-viewmodel-savedstate-2.8.6/AndroidManifest.xml:20:5-44
+MERGED from [androidx.core:core-ktx:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/a1a3a423b6199b27b869af391a485b15/transformed/jetified-core-ktx-1.13.1/AndroidManifest.xml:5:5-44
+MERGED from [androidx.core:core-ktx:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/a1a3a423b6199b27b869af391a485b15/transformed/jetified-core-ktx-1.13.1/AndroidManifest.xml:5:5-44
+MERGED from [androidx.annotation:annotation-experimental:1.4.0] /Users/kolosus/.gradle/caches/transforms-4/8db07335e3ae42838c8bbffe9133c2d2/transformed/jetified-annotation-experimental-1.4.0/AndroidManifest.xml:5:5-44
+MERGED from [androidx.annotation:annotation-experimental:1.4.0] /Users/kolosus/.gradle/caches/transforms-4/8db07335e3ae42838c8bbffe9133c2d2/transformed/jetified-annotation-experimental-1.4.0/AndroidManifest.xml:5:5-44
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/b545a45b5c6859661283c18d0d24b5c6/transformed/versionedparcelable-1.1.1/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/b545a45b5c6859661283c18d0d24b5c6/transformed/versionedparcelable-1.1.1/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.interpolator:interpolator:1.0.0] /Users/kolosus/.gradle/caches/transforms-4/646a31fa03018ac34e7a59518e3ac04e/transformed/interpolator-1.0.0/AndroidManifest.xml:20:5-44
+MERGED from [androidx.interpolator:interpolator:1.0.0] /Users/kolosus/.gradle/caches/transforms-4/646a31fa03018ac34e7a59518e3ac04e/transformed/interpolator-1.0.0/AndroidManifest.xml:20:5-44
+MERGED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:21:5-44
+MERGED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:21:5-44
+MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:21:5-23:41
+MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:21:5-23:41
+MERGED from [androidx.tracing:tracing:1.0.0] /Users/kolosus/.gradle/caches/transforms-4/dc2b05fe3dc8129e502260d894229131/transformed/jetified-tracing-1.0.0/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.tracing:tracing:1.0.0] /Users/kolosus/.gradle/caches/transforms-4/dc2b05fe3dc8129e502260d894229131/transformed/jetified-tracing-1.0.0/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.arch.core:core-runtime:2.2.0] /Users/kolosus/.gradle/caches/transforms-4/80d0a0599fa68d9df3cfaaa481633dd3/transformed/core-runtime-2.2.0/AndroidManifest.xml:20:5-44
+MERGED from [androidx.arch.core:core-runtime:2.2.0] /Users/kolosus/.gradle/caches/transforms-4/80d0a0599fa68d9df3cfaaa481633dd3/transformed/core-runtime-2.2.0/AndroidManifest.xml:20:5-44
+	android:targetSdkVersion
+		INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/kolosus/Documents/DSA/wear-hr-app/app/src/main/AndroidManifest.xml
+permission#${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:22:5-24:47
+	android:protectionLevel
+		ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:24:9-44
+	android:name
+		ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:23:9-81
+permission#com.example.wearhr.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:22:5-24:47
+	android:protectionLevel
+		ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:24:9-44
+	android:name
+		ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:23:9-81
+uses-permission#${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:26:5-97
+	android:name
+		ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:26:22-94
+uses-permission#com.example.wearhr.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:26:5-97
+	android:name
+		ADDED from [androidx.core:core:1.13.1] /Users/kolosus/.gradle/caches/transforms-4/518f2556f9db31fcd74a36d4f37bdc4a/transformed/core-1.13.1/AndroidManifest.xml:26:22-94
+provider#androidx.startup.InitializationProvider
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:24:9-32:20
+MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:26:9-30:34
+MERGED from [androidx.startup:startup-runtime:1.1.1] /Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:26:9-30:34
+	tools:node
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:28:13-31
+	android:authorities
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:26:13-68
+	android:exported
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:27:13-37
+	android:name
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:25:13-67
+meta-data#androidx.profileinstaller.ProfileInstallerInitializer
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
+	android:value
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
+	android:name
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
+receiver#androidx.profileinstaller.ProfileInstallReceiver
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
+	android:enabled
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
+	android:exported
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
+	android:permission
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
+	android:directBootAware
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
+	android:name
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
+intent-filter#action:name:androidx.profileinstaller.action.INSTALL_PROFILE
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
+action#androidx.profileinstaller.action.INSTALL_PROFILE
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
+	android:name
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
+intent-filter#action:name:androidx.profileinstaller.action.SKIP_FILE
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
+action#androidx.profileinstaller.action.SKIP_FILE
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
+	android:name
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
+intent-filter#action:name:androidx.profileinstaller.action.SAVE_PROFILE
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
+action#androidx.profileinstaller.action.SAVE_PROFILE
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
+	android:name
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
+intent-filter#action:name:androidx.profileinstaller.action.BENCHMARK_OPERATION
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
+action#androidx.profileinstaller.action.BENCHMARK_OPERATION
+ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
+	android:name
+		ADDED from [androidx.profileinstaller:profileinstaller:1.3.1] /Users/kolosus/.gradle/caches/transforms-4/5e3abd3b234f30565ef638aaedd7f22e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
