@@ -1,183 +1,125 @@
 # ============================================
-# Node.js / JavaScript / TypeScript
+# Node.js Dependencies (SPECIFIC PATHS)
 # ============================================
-node_modules/
-**/node_modules/
-npm-cache/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json.backup
-.npm
-.yarn/
-.pnp.*
-
-# Build outputs
-dist/
-build/
-*.log
-.cache/
-
-# Environment files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.*.local
+backend/node_modules/
+backend/npm-cache/
+map-task-frontend/node_modules/
+map-task-frontend/maptask/
 
 # ============================================
-# Python
+# Build Outputs (SPECIFIC PATHS)
 # ============================================
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-ENV/
-env/
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.coverage
-htmlcov/
+backend/build/
+backend/dist/
+map-task-frontend/dist/
+map-task-frontend/build/
 
 # ============================================
-# C / C++
+# Android/Kotlin Build (wear-hr-app)
 # ============================================
-*.o
-*.out
-*.exe
-*.obj
-*.elf
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-a.out
+wear-hr-app/.gradle/
+wear-hr-app/build/
+wear-hr-app/app/build/
+wear-hr-app/.idea/
+wear-hr-app/local.properties
+wear-hr-app/captures/
+wear-hr-app/.externalNativeBuild/
+wear-hr-app/.cxx/
 
 # ============================================
-# Android / Kotlin (wear-hr-app)
+# Backend specific
+# ============================================
+backend/TUNNEL_URL.txt
+backend/*.log
+backend/.env
+backend/.env.local
+
+# ============================================
+# Frontend specific
+# ============================================
+map-task-frontend/.vercel/
+map-task-frontend/.vite/
+map-task-frontend/.env
+map-task-frontend/.env.local
+
+# ============================================
+# Python (Data Structures directory)
+# ============================================
+Data\ Structures/__pycache__/
+Data\ Structures/*.pyc
+Data\ Structures/venv/
+Data\ Structures/env/
+
+# ============================================
+# C/C++ Compiled (Data Structures directory)
+# ============================================
+Data\ Structures/*.o
+Data\ Structures/*.out
+Data\ Structures/*.exe
+Data\ Structures/a.out
+
+# ============================================
+# LaTeX Auxiliary Files (Data Structures directory)
+# ============================================
+Data\ Structures/*.aux
+Data\ Structures/*.log
+Data\ Structures/*.out
+Data\ Structures/*.toc
+Data\ Structures/*.fdb_latexmk
+Data\ Structures/*.fls
+Data\ Structures/*.synctex.gz
+Data\ Structures/*.nav
+Data\ Structures/*.snm
+Data\ Structures/*.vrb
+Data\ Structures/*.bbl
+Data\ Structures/*.blg
+
+# ============================================
+# Android File Types (anywhere in wear-hr-app)
 # ============================================
 *.iml
-.gradle/
-local.properties
-.idea/
-.DS_Store
-build/
-captures/
-.externalNativeBuild
-.cxx
 *.apk
 *.ap_
 *.aab
 *.dex
-*.class
-
-# Android Studio
-*.iws
-.idea/workspace.xml
-.idea/tasks.xml
-.idea/gradle.xml
-.idea/assetWizardSettings.xml
-.idea/dictionaries
-.idea/libraries
-.idea/caches
-.idea/modules.xml
-.idea/*.iml
-.idea/modules
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/misc.xml
-
-# Gradle
-.gradle
-**/build/
-!gradle-wrapper.jar
 
 # ============================================
-# LaTeX
-# ============================================
-*.aux
-*.log
-*.out
-*.toc
-*.fdb_latexmk
-*.fls
-*.synctex.gz
-*.synctex(busy)
-*.nav
-*.snm
-*.vrb
-*.bbl
-*.blg
-*.lof
-*.lot
-*.idx
-*.ilg
-*.ind
-*.bcf
-*.run.xml
-*.fls
-*.dvi
-*.pdf.backup
-
-# ============================================
-# Frontend specific (Vite, React, etc.)
-# ============================================
-.vite/
-.turbo/
-.next/
-.nuxt/
-.vercel/
-.netlify/
-
-# ============================================
-# OS Files
+# OS Files (GLOBAL)
 # ============================================
 .DS_Store
 .DS_Store?
 ._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 Desktop.ini
 
 # ============================================
-# Editor / IDE
+# Editor/IDE (GLOBAL)
 # ============================================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.project
-.classpath
-.settings/
 
 # ============================================
-# Temporary / misc
+# Log files (GLOBAL)
+# ============================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# ============================================
+# Environment files (GLOBAL)
+# ============================================
+.env
+.env.local
+.env.*.local
+
+# ============================================
+# Temporary files (GLOBAL)
 # ============================================
 *.tmp
 *.temp
 *.bak
 *.old
 *.orig
-.history/
-
-# ============================================
-# Tunnel / deployment files
-# ============================================
-TUNNEL_URL.txt
-
-# ============================================
-# Specific to your project
-# ============================================
-# If you don't want to commit map images at root:
-# *.gif
-
-# Data folder (if contains large/sensitive data)
-# data/
