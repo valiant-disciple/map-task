@@ -8,9 +8,17 @@ This repository contains a complete experimental system for investigating real-t
 
 ## 🏗️ Project Structure
 root/
-├── map-task-frontend/ # React/TypeScript dyadic task interface
-├── backend/ # Node.js HR monitoring API
-├── wear-hr-app/ # Samsung Watch HR streaming app
+
+
+├── map-task-frontend/    # React/TypeScript dyadic task interface
+
+
+├── backend/    # Node.js HR monitoring API
+
+
+├── wear-hr-app/    # Samsung Watch HR streaming app
+
+
 
 ## ✨ Key Features
 
