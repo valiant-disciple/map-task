@@ -16,8 +16,8 @@ android {
         vectorDrawables.useSupportLibrary = true
 
         // Set to your ngrok HTTPS URL
-        // Set to public tunnel URL for wireless access
-        buildConfigField("String", "BASE_URL", "\"wss://afraid-onions-attack.loca.lt\"")
+        // Production Render Backend
+        buildConfigField("String", "BASE_URL", "\"wss://watch-hr-backend.onrender.com\"")
     }
 
     buildFeatures {

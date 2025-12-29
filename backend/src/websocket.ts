@@ -13,12 +13,18 @@ export function setupWebSocket(server: Server) {
         clients.add(ws);
 
         ws.on('message', (message) => {
-            // Basic logging of received data (optional, can be verbose)
-            // In production you might forward this to a DB or frontend
+            // Log to server console
             try {
-                const data = JSON.parse(message.toString());
+                const msgString = message.toString();
+                const data = JSON.parse(msgString);
                 console.log('Received:', data);
-                // Uncomment above to see stream, keeping quiet for now to avoid log spam
+
+                // Broadcast to all other clients (e.g. wscat, frontend)
+                clients.forEach(client => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(msgString);
+                    }
+                });
             } catch (e) {
                 console.error('Error parsing message:', e);
             }
