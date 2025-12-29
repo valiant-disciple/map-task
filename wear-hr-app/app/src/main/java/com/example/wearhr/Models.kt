@@ -1,9 +1,8 @@
-package com.example.wearhr
-
-data class HrPayload(
+data class SensorPayload(
     val deviceId: String,
     val ts: Long,
-    val hr: Int,
+    val type: String,
+    val values: List<Float>,
     val accuracy: Int
 )
 

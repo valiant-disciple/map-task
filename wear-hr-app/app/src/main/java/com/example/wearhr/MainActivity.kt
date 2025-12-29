@@ -9,17 +9,20 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
-import android.os.SystemClock
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity(), SensorEventListener {
 
     private lateinit var sensorManager: SensorManager
     private var heartRateSensor: Sensor? = null
+    private var accelSensor: Sensor? = null
+    private var gyroSensor: Sensor? = null
 
     private lateinit var txtStatus: TextView
     private lateinit var txtHr: TextView
@@ -27,7 +30,7 @@ class MainActivity : Activity(), SensorEventListener {
     private lateinit var btnStart: Button
     private lateinit var btnStop: Button
 
-    private val http = HttpClient()
+    private val socketClient = SocketClient()
     private var tracking = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,11 +47,26 @@ class MainActivity : Activity(), SensorEventListener {
 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
+        accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
         btnStart.setOnClickListener { startTracking() }
         btnStop.setOnClickListener { stopTracking() }
 
+        // Initialize Socket
+        socketClient.connect(BuildConfig.BASE_URL)
+        socketClient.setOnCommandListener { command ->
+            runOnUiThread {
+                when (command) {
+                    "start" -> startTracking()
+                    "stop" -> stopTracking()
+                }
+            }
+        }
+
         ensurePermissions()
+        // Auto-start tracking when app opens
+        startTracking()
     }
 
     private fun ensurePermissions() {
@@ -65,14 +83,13 @@ class MainActivity : Activity(), SensorEventListener {
             ensurePermissions()
             return
         }
-        val sensor = heartRateSensor
-        if (sensor == null) {
-            txtStatus.text = "Status: HR sensor not available"
-            return
-        }
+        
         tracking = true
         txtStatus.text = "Status: Tracking"
-        sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+        
+        heartRateSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        accelSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        gyroSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
     }
 
     private fun stopTracking() {
@@ -95,34 +112,42 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null || event.sensor.type != Sensor.TYPE_HEART_RATE) return
-        val hrValue = event.values.firstOrNull()?.toInt() ?: return
+        if (event == null) return
+        
+        val now = System.currentTimeMillis()
+        val values = event.values.toList()
+        
+        // Update UI for HR only to keep it simple, or last sensor
+        if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
+            txtHr.text = "HR: ${values[0].toInt()}"
+        }
+        txtTs.text = "TS: $now"
 
-        // Convert sensor timestamp (ns since boot) to wall-clock ms
-        val eventElapsedMs = event.timestamp / 1_000_000L
-        val nowElapsedMs = SystemClock.elapsedRealtimeNanos() / 1_000_000L
-        val wallTimeMs = System.currentTimeMillis() - (nowElapsedMs - eventElapsedMs)
+        val type = when(event.sensor.type) {
+            Sensor.TYPE_HEART_RATE -> "HEART_RATE"
+            Sensor.TYPE_ACCELEROMETER -> "ACCELEROMETER"
+            Sensor.TYPE_GYROSCOPE -> "GYROSCOPE"
+            else -> "UNKNOWN"
+        }
 
-        txtHr.text = "HR: ${'$'}hrValue"
-        txtTs.text = "TS: ${'$'}wallTimeMs"
-
-        val payload = HrPayload(
-            deviceId = android.os.Build.MODEL ?: "watch",
-            ts = wallTimeMs,
-            hr = hrValue,
-            accuracy = event.accuracy
-        )
-        http.postHr(BuildConfig.BASE_URL, payload)
+        val payload = JSONObject().apply {
+            put("deviceId", android.os.Build.MODEL ?: "watch")
+            put("ts", now)
+            put("type", type)
+            put("values", JSONArray(values))
+            put("accuracy", event.accuracy)
+        }
+        
+        socketClient.send(payload.toString())
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopTracking()
+        socketClient.close()
     }
 
     companion object {
         private const val REQ_SENSORS = 1001
     }
 }
-
-

@@ -16,7 +16,8 @@ android {
         vectorDrawables.useSupportLibrary = true
 
         // Set to your ngrok HTTPS URL
-        buildConfigField("String", "BASE_URL", "\"https://distemperately-nonduplicative-elise.ngrok-free.dev\"")
+        // Set to public tunnel URL for wireless access
+        buildConfigField("String", "BASE_URL", "\"wss://afraid-onions-attack.loca.lt\"")
     }
 
     buildFeatures {

@@ -14,8 +14,9 @@ export async function downloadSessionZip(options: {
   sessionId: string;
   events: any[];
   finalImageDataUrl?: string | null;
+  audioFiles?: Map<number, { blob: Blob; filename: string }[]>; // trialIndex -> list of audio files
 }) {
-  const { sessionId, events } = options;
+  const { sessionId, events, audioFiles } = options;
 
   const metas = events.filter(e => e.type === 'session_meta').map(e => e.payload || {});
   const metaDirector = metas.find((m: any) => m.role === 'director') || {};
@@ -32,21 +33,21 @@ export async function downloadSessionZip(options: {
     trialMap.get(ti)!.push(e);
   }
 
-  const dataTrialIndices = Array.from(trialMap.keys()).filter(ti => ti > warmupCount && ti <= trialTotal).sort((a,b)=>a-b);
+  const dataTrialIndices = Array.from(trialMap.keys()).filter(ti => ti > warmupCount && ti <= trialTotal).sort((a, b) => a - b);
 
   const zip = new JSZip();
 
   const trialSummaries: any[] = [];
   for (const ti of dataTrialIndices) {
     const tevents = trialMap.get(ti) || [];
-    const mapNumber = tevents.find((e:any)=>typeof e?.payload?.mapNumber === 'number')?.payload?.mapNumber
+    const mapNumber = tevents.find((e: any) => typeof e?.payload?.mapNumber === 'number')?.payload?.mapNumber
       ?? ((mapSet === 1 ? 0 : 8) + (ti - 1));
 
     const tlxDirector = tevents.filter(e => e.type === 'tlx_submit' && e.role === 'director').map(e => e.payload);
-    const tlxMatcher  = tevents.filter(e => e.type === 'tlx_submit' && e.role === 'matcher').map(e => e.payload);
+    const tlxMatcher = tevents.filter(e => e.type === 'tlx_submit' && e.role === 'matcher').map(e => e.payload);
 
     const psmmDirector = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'director').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
-    const psmmMatcher  = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'matcher').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
+    const psmmMatcher = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'matcher').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
 
     const modeTimeline = tevents.filter(e => e.type === 'mode_change').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw' }));
     const strokes = tevents.filter(e => e.type === 'draw_end').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: e.payload?.polyline || [] }));
@@ -61,7 +62,7 @@ export async function downloadSessionZip(options: {
       cause: e.payload?.cause ?? null
     }));
 
-    const dir = zip.folder(`trials/T${String(ti).padStart(2,'0')}`)!;
+    const dir = zip.folder(`trials/T${String(ti).padStart(2, '0')}`)!;
     dir.file('events.json', JSON.stringify(tevents, null, 2));
     dir.file('strokes.json', JSON.stringify(strokes, null, 2));
     dir.file('cursor.json', JSON.stringify(cursor, null, 2));
@@ -71,12 +72,21 @@ export async function downloadSessionZip(options: {
     dir.file('psmm_matcher.json', JSON.stringify(psmmMatcher, null, 2));
     if (final) dir.file('final_image.png', dataUrlToBlob(final), { binary: true });
 
+    // Save audio files for this trial
+    if (audioFiles && audioFiles.has(ti)) {
+      const audios = audioFiles.get(ti)!;
+      const audioDir = dir.folder('audio')!;
+      audios.forEach(a => {
+        audioDir.file(a.filename, a.blob);
+      });
+    }
+
     trialSummaries.push({
       trialIndex: ti,
       mapNumber,
       maps: {
         director: `map${mapNumber}g.gif`,
-        matcher:  `map${mapNumber}f.gif`
+        matcher: `map${mapNumber}f.gif`
       },
       tlx: { director: tlxDirector.length, matcher: tlxMatcher.length },
       psmm: { director: psmmDirector.length, matcher: psmmMatcher.length },
@@ -88,7 +98,7 @@ export async function downloadSessionZip(options: {
     session: { id: metaDirector.sessionId || metaMatcher.sessionId || sessionId, createdAt: events[0]?.t || null },
     participants: [
       { role: 'director', participantId: metaDirector.participantId || null },
-      { role: 'matcher',  participantId: metaMatcher.participantId  || null }
+      { role: 'matcher', participantId: metaMatcher.participantId || null }
     ],
     config: {
       mapSet,

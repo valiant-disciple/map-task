@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: watch-hr-backend
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: PORT
+        value: 10000
+    autoDeploy: true

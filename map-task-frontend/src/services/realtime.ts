@@ -4,11 +4,14 @@ import type { EventRecord } from '../types';
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Force local BroadcastChannel for testing when Supabase isn't available
+const USE_LOCAL_CHANNEL = import.meta.env.VITE_USE_LOCAL_CHANNEL === 'true';
+
 let supabase: ReturnType<typeof createClient> | null = null;
-if (url && key) {
+if (url && key && !USE_LOCAL_CHANNEL) {
   supabase = createClient(url, key);
 } else {
-  console.warn('[supabase] Realtime disabled: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
+  console.warn('[realtime] Using LocalChannel (BroadcastChannel) for same-browser sync');
 }
 
 export const realtimeEnabled = !!supabase;
@@ -61,7 +64,7 @@ export async function signalTrialEnd(channel: RealtimeChannel | null) {
   await (channel as any).send({ type: 'broadcast', event: 'trial_end', payload: { at: Date.now() } });
 }
 
-export async function signalFormSubmitted(channel: RealtimeChannel | null, role: 'director'|'matcher') {
+export async function signalFormSubmitted(channel: RealtimeChannel | null, role: 'director' | 'matcher') {
   if (!channel) return;
   await (channel as any).send({ type: 'broadcast', event: 'forms_submitted', payload: { role, at: Date.now() } });
 }

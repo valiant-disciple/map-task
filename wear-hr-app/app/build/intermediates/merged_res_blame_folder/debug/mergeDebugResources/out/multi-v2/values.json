@@ -23,20 +23,37 @@
                     }
                 },
                 {
-                    "source": "/Users/kolosus/.gradle/caches/transforms-4/e25670d32d8f7e6fca702d62873f18b4/transformed/activity-1.9.2/res/values/values.xml",
+                    "source": "/Users/kolosus/.gradle/caches/transforms-4/6eee158dc5aa0a416cb6a30a0b8875aa/transformed/jetified-savedstate-1.2.1/res/values/values.xml",
                     "from": {
-                        "startLines": "2,3",
-                        "startColumns": "4,4",
-                        "startOffsets": "55,97",
-                        "endColumns": "41,59",
-                        "endOffsets": "92,152"
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "53",
+                        "endOffsets": "104"
                     },
                     "to": {
-                        "startLines": "68,86",
-                        "startColumns": "4,4",
-                        "startOffsets": "4197,5141",
-                        "endColumns": "41,59",
-                        "endOffsets": "4234,5196"
+                        "startLines": "87",
+                        "startColumns": "4",
+                        "startOffsets": "5201",
+                        "endColumns": "53",
+                        "endOffsets": "5250"
+                    }
+                },
+                {
+                    "source": "/Users/kolosus/.gradle/caches/transforms-4/0f78638f0efcb5638e2f60e7de854af8/transformed/jetified-startup-runtime-1.1.1/res/values/values.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "82",
+                        "endOffsets": "133"
+                    },
+                    "to": {
+                        "startLines": "90",
+                        "startColumns": "4",
+                        "startOffsets": "5375",
+                        "endColumns": "82",
+                        "endOffsets": "5453"
                     }
                 },
                 {
@@ -57,7 +74,7 @@
                     }
                 },
                 {
-                    "source": "/Users/kolosus/.gradle/caches/transforms-4/41930715f1a5ea8220abc6134f86b89b/transformed/lifecycle-viewmodel-release/res/values/values.xml",
+                    "source": "/Users/kolosus/.gradle/caches/transforms-4/8d3f2bc3706f410d008859c21fa516c9/transformed/jetified-lifecycle-viewmodel-release/res/values/values.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",
@@ -74,24 +91,24 @@
                     }
                 },
                 {
-                    "source": "/Users/kolosus/.gradle/caches/transforms-4/9334e8d0900ab04946fe0cbec77442d4/transformed/savedstate-1.2.1/res/values/values.xml",
+                    "source": "/Users/kolosus/.gradle/caches/transforms-4/394e331792603b51d6e81ecbe94effce/transformed/jetified-activity-1.9.2/res/values/values.xml",
                     "from": {
-                        "startLines": "2",
-                        "startColumns": "4",
-                        "startOffsets": "55",
-                        "endColumns": "53",
-                        "endOffsets": "104"
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,97",
+                        "endColumns": "41,59",
+                        "endOffsets": "92,152"
                     },
                     "to": {
-                        "startLines": "87",
-                        "startColumns": "4",
-                        "startOffsets": "5201",
-                        "endColumns": "53",
-                        "endOffsets": "5250"
+                        "startLines": "68,86",
+                        "startColumns": "4,4",
+                        "startOffsets": "4197,5141",
+                        "endColumns": "41,59",
+                        "endOffsets": "4234,5196"
                     }
                 },
                 {
-                    "source": "/Users/kolosus/.gradle/caches/transforms-4/f080c8b0b15113bdba6d9bd5f23e8f28/transformed/lifecycle-runtime-release/res/values/values.xml",
+                    "source": "/Users/kolosus/.gradle/caches/transforms-4/29da75351e3116f37b1f100eba045f80/transformed/jetified-lifecycle-runtime-release/res/values/values.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",
@@ -105,23 +122,6 @@
                         "startOffsets": "5098",
                         "endColumns": "42",
                         "endOffsets": "5136"
-                    }
-                },
-                {
-                    "source": "/Users/kolosus/.gradle/caches/transforms-4/2deb276cffe1b669beecdda02a09751f/transformed/startup-runtime-1.1.1/res/values/values.xml",
-                    "from": {
-                        "startLines": "2",
-                        "startColumns": "4",
-                        "startOffsets": "55",
-                        "endColumns": "82",
-                        "endOffsets": "133"
-                    },
-                    "to": {
-                        "startLines": "90",
-                        "startColumns": "4",
-                        "startOffsets": "5375",
-                        "endColumns": "82",
-                        "endOffsets": "5453"
                     }
                 }
             ]
