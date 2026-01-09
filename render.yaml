@@ -10,3 +10,13 @@ services:
       - key: PORT
         value: 10000
     autoDeploy: true
+
+  - type: static
+    name: map-task-frontend
+    rootDir: map-task-frontend
+    buildCommand: npm install && npm run build
+    publishDir: dist
+    routes:
+      - type: rewrite
+        source: "/*"
+        destination: /index.html
