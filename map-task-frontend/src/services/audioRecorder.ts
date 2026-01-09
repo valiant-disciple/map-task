@@ -20,8 +20,10 @@ export class AudioRecorder {
         try {
             // enhance permission prompt if not granted
             await navigator.mediaDevices.getUserMedia({ audio: true });
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            return devices.filter(d => d.kind === 'audioinput');
+            const allDevices = await navigator.mediaDevices.enumerateDevices();
+            const inputs = allDevices.filter(d => d.kind === 'audioinput');
+            console.log(`[AudioRecorder] Found ${inputs.length} audio inputs`);
+            return inputs;
         } catch (err) {
             console.error('Error listing audio devices:', err);
             return [];

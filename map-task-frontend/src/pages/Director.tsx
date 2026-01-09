@@ -4,13 +4,16 @@ import MapViewer from '../components/MapViewer';
 import Toolbar from '../components/Toolbar';
 import TLXForm from '../components/TLXForm';
 import PSMMForm from '../components/PSMMForm';
+import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalEvt, signalTrialPrepare, signalSyncState } from '../services/realtime';
+import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalEvt, signalTrialPrepare, signalSyncState, signalBaselineStart } from '../services/realtime';
 import type { SyncPhase, SyncState } from '../services/realtime';
 import { downloadSessionZip } from '../utils/zip';
 import { audioRecorder } from '../services/audioRecorder';
 import type { AudioRecordingResult } from '../services/audioRecorder';
+import { watchService, type HRReading } from '../services/watchService';
+import MicCheckWidget from '../components/MicCheckWidget';
 import type { EventRecord } from '../types';
 
 import { getMapSrc } from '../utils/mapAssets';
@@ -35,11 +38,19 @@ export default function Director() {
   const [now, setNow] = useState(Date.now());
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState<string>('');
+  const [micConfirmed, setMicConfirmed] = useState(false);
 
   const channelRef = useRef<ReturnType<typeof joinSession> | null>(null);
   const endedRef = useRef(false);
   const activeTrialRef = useRef<number>(state.trialIndex);
   const audioFilesRef = useRef<Map<number, { blob: Blob; filename: string }[]>>(new Map());
+  const incomingChunksRef = useRef<Map<string, { chunks: string[]; total: number }>>(new Map());
+
+  // HR state
+  const [baselineDone, setBaselineDone] = useState(false);
+  const [baselineHR, setBaselineHR] = useState<number | null>(null);
+  const hrDataRef = useRef<Map<number, { director: HRReading[]; matcher: HRReading[] }>>(new Map());
+  const incomingHRChunksRef = useRef<Map<string, { data: string }>>(new Map());
 
   // console.log('[Director] Render', { ts: Date.now(), activeTrial: activeTrialRef.current, showTLX, stoppedRemainSec });
 
@@ -60,11 +71,37 @@ export default function Director() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc.search]);
 
+  const refreshDevices = async () => {
+    const devs = await audioRecorder.getDevices();
+    console.log('[Director] Devices found:', devs.length);
+    setDevices(devs);
+    if (devs.length > 0 && !selectedMicId) setSelectedMicId(devs[0].deviceId);
+    return devs.length;
+  };
+
   useEffect(() => {
-    audioRecorder.getDevices().then(devs => {
-      setDevices(devs);
-      if (devs.length > 0) setSelectedMicId(devs[0].deviceId);
+    // Initial fetch - may fail if permission not granted yet
+    refreshDevices().then(count => {
+      // If no devices found, retry after a short delay (user may be granting permission)
+      if (count === 0) {
+        console.log('[Director] No devices on first try, scheduling retry...');
+        const retryTimer = setTimeout(() => {
+          refreshDevices();
+        }, 2000); // Retry after 2 seconds
+        return () => clearTimeout(retryTimer);
+      }
     });
+
+    // Listen for device changes (e.g., permission granted, device plugged in)
+    const handleDeviceChange = () => {
+      console.log('[Director] Device change detected, refreshing...');
+      refreshDevices();
+    };
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
   }, []);
 
   const currentMapNum = mapNumber(state.mapSet, activeTrialRef.current);
@@ -194,6 +231,78 @@ export default function Director() {
           if (payload?.rec) addRaw(payload.rec as EventRecord);
         }
       });
+
+
+      // Handle incoming audio chunks
+      channelRef.current?.on('broadcast', { event: 'audio_chunk' }, ({ payload }) => {
+        if (!payload) return;
+        const { trialIndex, chunkIndex, totalChunks, data, filename } = payload;
+        const key = `${trialIndex}_${filename}`;
+
+        // Init buffer if new
+        if (!incomingChunksRef.current.has(key)) {
+          incomingChunksRef.current.set(key, { chunks: new Array(totalChunks).fill(''), total: totalChunks });
+        }
+
+        const buffer = incomingChunksRef.current.get(key)!;
+        buffer.chunks[chunkIndex] = data;
+
+        // Check if complete
+        const receivedCount = buffer.chunks.filter(c => c !== '').length;
+        if (chunkIndex % 5 === 0 || receivedCount === totalChunks) { // Log less frequently
+          console.log(`[Director] Rx Audio Chunk ${chunkIndex + 1}/${totalChunks} for ${filename}`);
+        }
+
+        if (receivedCount === totalChunks) {
+          console.log(`[Director] Audio Complete: ${filename}`);
+          // Reassemble
+          const byteCharacters = atob(buffer.chunks.join(''));
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'audio/webm' });
+
+          // Store
+          const current = audioFilesRef.current.get(trialIndex) || [];
+          // Avoid duplicates
+          if (!current.some(f => f.filename === filename)) {
+            current.push({ blob, filename });
+            audioFilesRef.current.set(trialIndex, current);
+          }
+
+          // Cleanup
+          incomingChunksRef.current.delete(key);
+          checkAudioSync();
+        }
+      });
+
+      // Handle incoming HR data from Matcher
+      channelRef.current?.on('broadcast', { event: 'hr_data' }, ({ payload }) => {
+        if (!payload || payload.role !== 'matcher') return;
+        const { trialIndex, data: csvData } = payload;
+        console.log(`[Director] Received HR data from Matcher for trial ${trialIndex}`);
+
+        // Parse CSV data (format: "t,bpm,phase|t,bpm,phase|...")
+        const readings: HRReading[] = csvData.split('|').map((row: string) => {
+          const [t, bpm, phase] = row.split(',');
+          return { t: parseInt(t), bpm: parseInt(bpm), phase: phase as 'baseline' | 'trial' | 'idle' };
+        });
+
+        // Store in hrDataRef
+        const existing = hrDataRef.current.get(trialIndex) || { director: [], matcher: [] };
+        existing.matcher = readings;
+        hrDataRef.current.set(trialIndex, existing);
+      });
+
+      // Handle baseline completion from Matcher
+      channelRef.current?.on('broadcast', { event: 'baseline_complete' }, ({ payload }) => {
+        if (!payload || payload.role !== 'matcher') return;
+        console.log(`[Director] Matcher baseline complete: ${payload.avgBpm} bpm`);
+        // Could store matcher baseline HR here if needed
+      });
+
     }
   }, [state.sessionId, state.participantId, state.mapSet]);
 
@@ -210,11 +319,40 @@ export default function Director() {
     }
   }, [startAt, countdownSec, remainSec, stoppedRemainSec]);
 
+  // Track trials that are missing remote audio
+  const [missingTrials, setMissingTrials] = useState<number[]>([]);
+
+  function checkAudioSync() {
+    const missing: number[] = [];
+    // Check every trial that has ANY audio (meaning it was run)
+    for (const [ti, files] of audioFilesRef.current.entries()) {
+      const hasDirector = files.some(f => f.filename.includes('director'));
+      const hasMatcher = files.some(f => f.filename.includes('matcher'));
+      // If we have local director audio but no matcher audio, it's missing
+      if (hasDirector && !hasMatcher) {
+        missing.push(ti);
+      }
+    }
+    setMissingTrials(missing);
+  }
+
   async function startSync() {
+    if (!baselineDone) {
+      alert('Please complete baseline HR measurement first.');
+      return;
+    }
+    if (!micConfirmed) {
+      alert('Please check your microphone first.');
+      return;
+    }
+
     const sAt = Date.now() + 3000;
     setStartAt(sAt);
     setStoppedRemainSec(null);
     endedRef.current = false;
+
+    // Set HR phase to trial
+    watchService.setPhase('trial');
 
     // Start recording
     try {
@@ -232,14 +370,22 @@ export default function Director() {
     if (endedRef.current) return;
     endedRef.current = true;
 
+    // Set HR phase to idle and save HR data for this trial
+    watchService.setPhase('idle');
+    const ti = activeTrialRef.current;
+    const trialHR = watchService.getReadingsForPhase('trial');
+    const existing = hrDataRef.current.get(ti) || { director: [], matcher: [] };
+    existing.director = [...existing.director, ...trialHR];
+    hrDataRef.current.set(ti, existing);
+
     // Stop recording
     if (audioRecorder.isRecording()) {
       audioRecorder.stop().then(res => {
         // console.log('[Director] Stopped recording (manual/timeout)', res);
-        const ti = activeTrialRef.current;
         const current = audioFilesRef.current.get(ti) || [];
         current.push({ blob: res.blob, filename: `director_T${ti}.webm` });
         audioFilesRef.current.set(ti, current);
+        checkAudioSync();
       }).catch(err => console.error('Error stopping recording:', err));
     }
 
@@ -279,12 +425,22 @@ export default function Director() {
     await signalFormSubmitted(channelRef.current, 'director');
   }
 
+  const onBaselineComplete = React.useCallback((avgBpm: number) => {
+    setBaselineHR(avgBpm);
+    setBaselineDone(true);
+    log('baseline_hr', { avgBpm, role: 'director' }, 'director');
+    // Signal matcher to start baseline
+    signalBaselineStart(channelRef.current);
+  }, []);
+
   async function downloadZip() {
     await downloadSessionZip({
       sessionId: state.sessionId!,
       events,
       finalImageDataUrl: null,
-      audioFiles: audioFilesRef.current
+      audioFiles: audioFilesRef.current,
+      hrData: hrDataRef.current,
+      baselineHR: { director: baselineHR, matcher: null } // Matcher baseline comes via event
     });
   }
 
@@ -292,48 +448,73 @@ export default function Director() {
   const canNextData = isDataTrial && formsDone && peerDone;
 
   return (
-    <div>
-      <Toolbar
-        sessionId={state.sessionId || ''}
-        role={`director (trial ${activeTrialRef.current}/${total}${!isDataTrial ? ' warmup' : ''})`}
-        remain={remainSec}
-        countdownSec={countdownSec}
-        isErase={false}
-        onToggleMode={() => { }}
-        onHere={() => { }}
-        onError={() => { }}
-        onEnd={() => endTrialNow('manual')}
-        showHere={true}
-        showError={false}
-      />
-      <div className="container">
-        <div className="row">
-          <button onClick={startSync}>Start (3s synced)</button>
-          <select
-            value={selectedMicId}
-            onChange={e => setSelectedMicId(e.target.value)}
-            style={{ maxWidth: 200, marginLeft: 10 }}
-          >
-            {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Mic ' + d.deviceId.slice(0, 4)}</option>)}
-          </select>
-        </div>
-        <MapViewer
-          src={getMapSrc('director', currentMapNum)}
-          isInteractive={false}
+    <div style={{ display: 'flex', gap: 16 }}>
+      {/* Sidebar with HR Widget */}
+      {/* Sidebar with HR Widget */}
+      <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <HRWidget onBaselineComplete={onBaselineComplete} baselineDuration={20} showSimToggle={true} />
+        <MicCheckWidget
+          onConfirm={() => setMicConfirmed(true)}
+          selectedMicId={selectedMicId}
+          devices={devices}
+          onSelectMic={setSelectedMicId}
+          onRefreshDevices={refreshDevices}
         />
-        <div className="row right" style={{ gap: 8 }}>
-          {stoppedRemainSec !== null && activeTrialRef.current < total && (
-            !isDataTrial
-              ? <button onClick={nextTrial}>Next Trial</button>
-              : <button disabled={!canNextData} onClick={nextTrial}>Next Trial</button>
-          )}
-          {activeTrialRef.current >= total && isDataTrial && (
-            <button disabled={!canNextData} onClick={downloadZip}>Download ZIP</button>
-          )}
+      </div>
+
+      {/* Main Content */}
+      <div style={{ flex: 1 }}>
+        <Toolbar
+          sessionId={state.sessionId || ''}
+          role={`director (trial ${activeTrialRef.current}/${total}${!isDataTrial ? ' warmup' : ''})`}
+          remain={remainSec}
+          countdownSec={countdownSec}
+          isErase={false}
+          onToggleMode={() => { }}
+          onHere={() => { }}
+          onError={() => { }}
+          onEnd={() => endTrialNow('manual')}
+          showHere={true}
+          showError={false}
+        />
+        <div className="container">
+          <div className="row">
+            <button
+              onClick={startSync}
+              disabled={!baselineDone || !micConfirmed}
+              style={{
+                backgroundColor: (!baselineDone || !micConfirmed) ? '#ccc' : '#4CAF50',
+                cursor: (!baselineDone || !micConfirmed) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {baselineDone && micConfirmed ? 'Start (3s synced)' : !baselineDone ? 'Complete Baseline First' : 'Complete Mic Check First'}
+            </button>
+
+          </div>
+          <MapViewer
+            src={getMapSrc('director', currentMapNum)}
+            isInteractive={false}
+          />
+          <div className="row right" style={{ gap: 8 }}>
+            {stoppedRemainSec !== null && activeTrialRef.current < total && (
+              !isDataTrial
+                ? <button onClick={nextTrial}>Next Trial</button>
+                : <button disabled={!canNextData} onClick={nextTrial}>Next Trial</button>
+            )}
+            {activeTrialRef.current >= total && isDataTrial && (
+              <button
+                disabled={!canNextData || missingTrials.length > 0}
+                onClick={downloadZip}
+                title={missingTrials.length > 0 ? `Waiting for audio: Trial ${missingTrials.join(', ')}` : 'Download ZIP'}
+              >
+                {missingTrials.length > 0 ? `Waiting for Audio (T${missingTrials[0]})...` : 'Download ZIP'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
       <TLXForm open={showTLX} onClose={() => setShowTLX(false)} onSubmit={onTLXSubmit} />
       <PSMMForm open={showPSMM} onClose={() => setShowPSMM(false)} onSubmit={onPSMMSubmit} />
-    </div>
+    </div >
   );
 }

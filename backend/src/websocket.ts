@@ -2,37 +2,67 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 
-// Store connected clients
-const clients: Set<WebSocket> = new Set();
+// Interface for client messages
+interface ClientMessage {
+    type: 'join' | 'broadcast' | 'command';
+    session?: string;
+    event?: string;
+    payload?: any;
+    action?: string;
+}
+
+// Store clients by session
+const sessions: Map<string, Set<WebSocket>> = new Map();
 
 export function setupWebSocket(server: Server) {
     const wss = new WebSocketServer({ server });
 
     wss.on('connection', (ws) => {
+        let currentSession: string | null = null;
         console.log('Client connected');
-        clients.add(ws);
 
         ws.on('message', (message) => {
-            // Log to server console
             try {
                 const msgString = message.toString();
-                const data = JSON.parse(msgString);
-                console.log('Received:', data);
+                const data = JSON.parse(msgString) as ClientMessage;
 
-                // Broadcast to all other clients (e.g. wscat, frontend)
-                clients.forEach(client => {
-                    if (client !== ws && client.readyState === WebSocket.OPEN) {
-                        client.send(msgString);
+                if (data.type === 'join') {
+                    if (data.session) {
+                        currentSession = data.session;
+                        if (!sessions.has(currentSession)) {
+                            sessions.set(currentSession, new Set());
+                        }
+                        sessions.get(currentSession)?.add(ws);
+                        console.log(`Client joined session: ${currentSession}`);
+                        ws.send(JSON.stringify({ event: 'system', payload: { status: 'joined', session: currentSession } }));
                     }
-                });
+                } else if (data.type === 'broadcast') {
+                    if (currentSession && sessions.has(currentSession)) {
+                        const room = sessions.get(currentSession);
+                        room?.forEach(client => {
+                            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                                // Forward the exact payload expected by frontend
+                                client.send(JSON.stringify({
+                                    event: data.event,
+                                    payload: data.payload
+                                }));
+                            }
+                        });
+                    }
+                }
             } catch (e) {
                 console.error('Error parsing message:', e);
             }
         });
 
         ws.on('close', () => {
+            if (currentSession && sessions.has(currentSession)) {
+                sessions.get(currentSession)?.delete(ws);
+                if (sessions.get(currentSession)?.size === 0) {
+                    sessions.delete(currentSession);
+                }
+            }
             console.log('Client disconnected');
-            clients.delete(ws);
         });
 
         ws.on('error', (error) => {
@@ -40,16 +70,12 @@ export function setupWebSocket(server: Server) {
         });
     });
 
-    console.log('WebSocket server initialized');
+    console.log('WebSocket server initialized (Room Support)');
 }
 
+// Deprecated global broadcast, but kept for watch app compatibility if needed
 export function broadcastCommand(command: 'start' | 'stop') {
-    console.log(`Broadcasting command: ${command}`);
-    const message = JSON.stringify({ type: 'command', action: command });
-
-    clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
-    });
+    // This functionality might need to be targeted to specific sessions in future
+    // For now, no-op or global broadcast if you really want
+    console.log(`Broadcast command (system-wide): ${command}`);
 }

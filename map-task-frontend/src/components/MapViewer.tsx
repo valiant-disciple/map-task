@@ -2,17 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 
 // Define types locally if not importing from types.ts to minimize dependencies
 interface Point { x: number; y: number; t: number; }
-interface Stroke { points: Point[]; color: string; width: number; }
+interface Stroke { points: Point[]; color: string; width: number; mode?: 'draw' | 'erase'; }
 
 interface MapViewerProps {
   src: string;
   isInteractive?: boolean;
+  isErase?: boolean;
   onStroke?: (stroke: Stroke) => void;
   onCursorMove?: (x: number, y: number) => void;
   remoteStrokes?: Stroke[];
 }
 
-export default function MapViewer({ src, isInteractive = true, onStroke, onCursorMove, remoteStrokes = [] }: MapViewerProps) {
+export default function MapViewer({ src, isInteractive = true, isErase = false, onStroke, onCursorMove, remoteStrokes = [] }: MapViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -24,8 +25,11 @@ export default function MapViewer({ src, isInteractive = true, onStroke, onCurso
   // Function to draw a single stroke
   function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
     if (stroke.points.length < 2) return;
+
+    ctx.globalCompositeOperation = stroke.mode === 'erase' ? 'destination-out' : 'source-over';
+
     ctx.beginPath();
-    ctx.lineWidth = stroke.width;
+    ctx.lineWidth = stroke.mode === 'erase' ? 20 : stroke.width; // Eraser is bigger
     ctx.strokeStyle = stroke.color;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -34,9 +38,12 @@ export default function MapViewer({ src, isInteractive = true, onStroke, onCurso
       ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
     }
     ctx.stroke();
+
+    // Reset composite op
+    ctx.globalCompositeOperation = 'source-over';
   }
 
-  // Redraw Everything (Remote + Local) whenever they change or window resizes
+  // Redraw Everything (Remote + Local + Current) whenever they change or window resizes
   const redraw = () => {
     const cvs = canvasRef.current;
     if (!cvs) return;
@@ -50,6 +57,17 @@ export default function MapViewer({ src, isInteractive = true, onStroke, onCurso
     remoteStrokes.forEach(s => drawStroke(ctx, s));
     // Draw local strokes
     localStrokes.forEach(s => drawStroke(ctx, s));
+
+    // Draw current in-progress stroke (so it doesn't vanish on state updates)
+    if (currentPath.current.length > 1) {
+      const inProgressStroke: Stroke = {
+        points: currentPath.current,
+        color: '#ff0000',
+        width: 3,
+        mode: isErase ? 'erase' : 'draw'
+      };
+      drawStroke(ctx, inProgressStroke);
+    }
   };
 
   useEffect(() => {
@@ -121,14 +139,16 @@ export default function MapViewer({ src, isInteractive = true, onStroke, onCurso
     if (ctx) {
       const prev = currentPath.current[currentPath.current.length - 2];
       if (prev) {
+        // Set context for this segment
+        ctx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over';
         ctx.beginPath();
-        // USER REQUEST: RED COLOR
-        ctx.lineWidth = 3;
+        ctx.lineWidth = isErase ? 20 : 3;
         ctx.strokeStyle = '#ff0000';
         ctx.lineCap = 'round';
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
+        ctx.globalCompositeOperation = 'source-over'; // Reset
       }
     }
   };
@@ -142,7 +162,8 @@ export default function MapViewer({ src, isInteractive = true, onStroke, onCurso
       const newStroke: Stroke = {
         points: [...currentPath.current],
         color: '#ff0000', // RED
-        width: 3
+        width: 3,
+        mode: isErase ? 'erase' : 'draw'
       };
       // Add to local history so it persists
       setLocalStrokes(prev => [...prev, newStroke]);
@@ -177,7 +198,7 @@ export default function MapViewer({ src, isInteractive = true, onStroke, onCurso
           top: 0,
           left: 0,
           touchAction: 'none',
-          cursor: isInteractive ? 'crosshair' : 'default',
+          cursor: isInteractive ? (isErase ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'10\' fill=\'none\' stroke=\'%23333\' stroke-width=\'2\'/%3E%3C/svg%3E") 12 12, crosshair' : 'crosshair') : 'default',
           background: 'transparent',
           pointerEvents: isInteractive ? 'auto' : 'none'
         }}

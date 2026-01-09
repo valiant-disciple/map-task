@@ -1,82 +1,112 @@
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+// Replaced Supabase with custom WebSocket implementation
 import type { EventRecord } from '../types';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Use standard WebSocket
+const WS_URL = 'ws://localhost:3000'; // Hardcoded for local dev as requested
 
-// Force local BroadcastChannel for testing when Supabase isn't available
-const USE_LOCAL_CHANNEL = import.meta.env.VITE_USE_LOCAL_CHANNEL === 'true';
-
-let supabase: ReturnType<typeof createClient> | null = null;
-if (url && key && !USE_LOCAL_CHANNEL) {
-  supabase = createClient(url, key);
-} else {
-  console.warn('[realtime] Using LocalChannel (BroadcastChannel) for same-browser sync');
-}
-
-export const realtimeEnabled = !!supabase;
-
-// Local same-browser fallback (for single-machine testing)
-class LocalChannel {
-  bc: BroadcastChannel;
+class WSChannel {
+  ws: WebSocket | null = null;
+  sessionId: string;
   handlers: Array<{ event: string; cb: (arg: any) => void }> = [];
-  constructor(name: string) {
-    this.bc = new BroadcastChannel(name);
-    this.bc.onmessage = (ev) => {
-      const { event, payload } = ev.data || {};
-      this.handlers.forEach(h => { if (h.event === event) h.cb({ payload }); });
+  queue: string[] = [];
+  isConnected = false;
+
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
+    this.connect();
+  }
+
+  connect() {
+    console.log(`[WS] Connecting to ${WS_URL} for session ${this.sessionId}`);
+    this.ws = new WebSocket(WS_URL);
+
+    this.ws.onopen = () => {
+      console.log('[WS] Connected');
+      this.isConnected = true;
+      // Join Session
+      this.ws?.send(JSON.stringify({ type: 'join', session: this.sessionId }));
+      // Flush queue
+      while (this.queue.length > 0) {
+        this.ws?.send(this.queue.shift()!);
+      }
+    };
+
+    this.ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        // Dispatch to handlers
+        // msg format from backend: { event: '...', payload: ... }
+        this.handlers.forEach(h => {
+          if (h.event === msg.event) {
+            h.cb({ payload: msg.payload });
+          }
+        });
+      } catch (e) {
+        console.error('[WS] Parse error', e);
+      }
+    };
+
+    this.ws.onclose = () => {
+      console.log('[WS] Disconnected. Reconnecting in 3s...');
+      this.isConnected = false;
+      setTimeout(() => this.connect(), 3000);
     };
   }
+
   on(_type: 'broadcast', filter: { event: string }, cb: (arg: any) => void) {
     this.handlers.push({ event: filter.event, cb });
-    return this as any;
+    return this;
   }
-  async send(msg: { type: 'broadcast'; event: string; payload: any }) {
-    this.bc.postMessage({ event: msg.event, payload: msg.payload });
+
+  send(msg: { type: 'broadcast'; event: string; payload: any }) {
+    const raw = JSON.stringify(msg);
+    if (this.isConnected && this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(raw);
+    } else {
+      this.queue.push(raw);
+    }
   }
+
   subscribe(cb?: (status: string) => void) {
+    // Mock subscribe for compatibility
     cb && cb('SUBSCRIBED');
-    return this as any;
+    return this;
   }
 }
 
-export function joinSession(sessionId: string): RealtimeChannel | null {
-  if (supabase) {
-    const channel = supabase.channel(`session:${sessionId}`, { config: { broadcast: { ack: true } } });
-    channel.subscribe((status) => {
-      console.info(`[supabase] channel session:${sessionId} status=${status}`);
-      return null;
-    });
-    return channel;
-  }
-  const ch = new LocalChannel(`session:${sessionId}`);
-  ch.subscribe((status) => console.info(`[local-bus] session:${sessionId} status=${status}`));
-  return ch as unknown as RealtimeChannel;
+// Singleton map to reuse channels per session
+const channels = new Map<string, WSChannel>();
+
+export function joinSession(sessionId: string): WSChannel {
+  if (channels.has(sessionId)) return channels.get(sessionId)!;
+  const channel = new WSChannel(sessionId);
+  channels.set(sessionId, channel);
+  return channel;
 }
 
-export async function signalStart(channel: RealtimeChannel | null, startAt: number, trialIndex: number, mapNumber: number) {
+export async function signalStart(channel: any, startAt: number, trialIndex: number, mapNumber: number) {
   if (!channel) return;
-  await (channel as any).send({ type: 'broadcast', event: 'start', payload: { startAt, trialIndex, mapNumber } });
+  channel.send({ type: 'broadcast', event: 'start', payload: { startAt, trialIndex, mapNumber } });
 }
 
-export async function signalTrialEnd(channel: RealtimeChannel | null) {
+export async function signalTrialEnd(channel: any) {
   if (!channel) return;
-  await (channel as any).send({ type: 'broadcast', event: 'trial_end', payload: { at: Date.now() } });
+  channel.send({ type: 'broadcast', event: 'trial_end', payload: { at: Date.now() } });
 }
 
-export async function signalFormSubmitted(channel: RealtimeChannel | null, role: 'director' | 'matcher') {
+export async function signalFormSubmitted(channel: any, role: 'director' | 'matcher') {
   if (!channel) return;
-  await (channel as any).send({ type: 'broadcast', event: 'forms_submitted', payload: { role, at: Date.now() } });
+  channel.send({ type: 'broadcast', event: 'forms_submitted', payload: { role, at: Date.now() } });
 }
 
-export async function signalEvt(channel: RealtimeChannel | null, rec: EventRecord, from: string) {
+export async function signalEvt(channel: any, rec: EventRecord, from: string) {
   if (!channel) return;
-  await (channel as any).send({ type: 'broadcast', event: 'evt', payload: { rec, from } });
+  channel.send({ type: 'broadcast', event: 'evt', payload: { rec, from } });
 }
 
-export async function signalTrialPrepare(channel: RealtimeChannel | null, trialIndex: number, mapNumber: number) {
+export async function signalTrialPrepare(channel: any, trialIndex: number, mapNumber: number) {
   if (!channel) return;
-  await (channel as any).send({ type: 'broadcast', event: 'trial_prepare', payload: { trialIndex, mapNumber, at: Date.now() } });
+  channel.send({ type: 'broadcast', event: 'trial_prepare', payload: { trialIndex, mapNumber, at: Date.now() } });
 }
 
 // Uniform sync
@@ -91,12 +121,49 @@ export type SyncState = {
   phase: SyncPhase;
 };
 
-export async function signalSyncRequest(channel: RealtimeChannel | null) {
+export async function signalSyncRequest(channel: any) {
   if (!channel) return;
-  await (channel as any).send({ type: 'broadcast', event: 'sync_request', payload: { at: Date.now() } });
+  channel.send({ type: 'broadcast', event: 'sync_request', payload: { at: Date.now() } });
 }
 
-export async function signalSyncState(channel: RealtimeChannel | null, state: SyncState) {
+export async function signalSyncState(channel: any, state: SyncState) {
   if (!channel) return;
-  await (channel as any).send({ type: 'broadcast', event: 'sync_state', payload: state });
+  channel.send({ type: 'broadcast', event: 'sync_state', payload: state });
+}
+
+export async function signalAudioChunk(
+  channel: any,
+  payload: {
+    trialIndex: number;
+    chunkIndex: number;
+    totalChunks: number;
+    data: string; // base64
+    filename: string;
+  }
+) {
+  if (!channel) return;
+  channel.send({ type: 'broadcast', event: 'audio_chunk', payload });
+}
+
+// HR Integration signals
+export async function signalBaselineStart(channel: any) {
+  if (!channel) return;
+  channel.send({ type: 'broadcast', event: 'baseline_start', payload: { at: Date.now() } });
+}
+
+export async function signalBaselineComplete(channel: any, role: 'director' | 'matcher', avgBpm: number) {
+  if (!channel) return;
+  channel.send({ type: 'broadcast', event: 'baseline_complete', payload: { role, avgBpm, at: Date.now() } });
+}
+
+export async function signalHRData(
+  channel: any,
+  payload: {
+    trialIndex: number;
+    role: 'director' | 'matcher';
+    data: string; // CSV data as base64 or raw string
+  }
+) {
+  if (!channel) return;
+  channel.send({ type: 'broadcast', event: 'hr_data', payload });
 }

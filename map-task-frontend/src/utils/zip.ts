@@ -10,13 +10,31 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
+// HR Reading type (matches watchService.ts)
+interface HRReading {
+  t: number;
+  bpm: number;
+  phase: 'baseline' | 'trial' | 'idle';
+}
+
+function hrReadingsToCSV(readings: HRReading[]): string {
+  const header = 'timestamp_unix_ms,timestamp_iso,bpm,phase';
+  const rows = readings.map(r => {
+    const iso = new Date(r.t).toISOString();
+    return `${r.t},${iso},${r.bpm},${r.phase}`;
+  });
+  return [header, ...rows].join('\n');
+}
+
 export async function downloadSessionZip(options: {
   sessionId: string;
   events: any[];
   finalImageDataUrl?: string | null;
   audioFiles?: Map<number, { blob: Blob; filename: string }[]>; // trialIndex -> list of audio files
+  hrData?: Map<number, { director: HRReading[]; matcher: HRReading[] }>; // trialIndex -> HR readings
+  baselineHR?: { director: number | null; matcher: number | null }; // Baseline averages
 }) {
-  const { sessionId, events, audioFiles } = options;
+  const { sessionId, events, audioFiles, hrData, baselineHR } = options;
 
   const metas = events.filter(e => e.type === 'session_meta').map(e => e.payload || {});
   const metaDirector = metas.find((m: any) => m.role === 'director') || {};
@@ -79,6 +97,18 @@ export async function downloadSessionZip(options: {
       audios.forEach(a => {
         audioDir.file(a.filename, a.blob);
       });
+    }
+
+    // Save HR CSV files for this trial
+    if (hrData && hrData.has(ti)) {
+      const trialHR = hrData.get(ti)!;
+      const hrDir = dir.folder('hr')!;
+      if (trialHR.director.length > 0) {
+        hrDir.file('hr_director.csv', hrReadingsToCSV(trialHR.director));
+      }
+      if (trialHR.matcher.length > 0) {
+        hrDir.file('hr_matcher.csv', hrReadingsToCSV(trialHR.matcher));
+      }
     }
 
     trialSummaries.push({
