@@ -1,7 +1,7 @@
 services:
   - type: web
+    runtime: node
     name: watch-hr-backend
-    env: node
     plan: free
     rootDir: backend
     buildCommand: npm install && npm run build
