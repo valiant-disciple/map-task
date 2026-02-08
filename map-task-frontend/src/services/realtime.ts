@@ -1,8 +1,8 @@
 // Replaced Supabase with custom WebSocket implementation
 import type { EventRecord } from '../types';
 
-// Use standard WebSocket
-const WS_URL = 'ws://localhost:3000'; // Hardcoded for local dev as requested
+// Use standard WebSocket — configurable via VITE_WS_URL env var
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
 
 class WSChannel {
   ws: WebSocket | null = null;

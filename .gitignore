@@ -123,3 +123,4 @@ yarn-debug.log*
 *.bak
 *.old
 *.orig
+.vercel
