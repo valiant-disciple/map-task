@@ -1,15 +1,16 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
+import { store } from './services/store.js';
+import type { HrRecord } from './types/hr.js';
 
 // Interface for client messages
 interface ClientMessage {
-    type: string;        // 'join' | 'broadcast' | 'command' | 'HEART_RATE' | 'ACCELEROMETER' | 'GYROSCOPE' | ...
+    type: string;
     session?: string;
     event?: string;
     payload?: any;
     action?: string;
-    // Sensor fields (from watch)
     deviceId?: string;
     ts?: number;
     values?: number[];
@@ -64,13 +65,22 @@ export function setupWebSocket(server: Server) {
                     }
                 } else if (SENSOR_TYPES.has(data.type)) {
                     // ── Sensor data from watch → relay to ALL other clients ──
-                    // The watch sends: { type: "HEART_RATE", deviceId, ts, values: [bpm], accuracy }
-                    // Forward the raw message to every connected client except the sender
                     allClients.forEach(client => {
                         if (client !== ws && client.readyState === WebSocket.OPEN) {
                             client.send(msgString);
                         }
                     });
+
+                    // Also persist HR data to the REST store so /api/hr/latest works
+                    if (data.type === 'HEART_RATE' && Array.isArray(data.values) && data.values.length > 0) {
+                        const record: HrRecord = {
+                            deviceId: data.deviceId || 'watch',
+                            ts: data.ts || Date.now(),
+                            hr: Math.round(data.values[0]),
+                            ibi: [],
+                        };
+                        store.add(record);
+                    }
                 }
             } catch (e) {
                 console.error('Error parsing message:', e);

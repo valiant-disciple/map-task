@@ -14,11 +14,13 @@ export default function HRWidget({ onBaselineComplete, baselineDuration = 20, sh
     const [baselineRemain, setBaselineRemain] = useState(baselineDuration);
     const [baselineAvg, setBaselineAvg] = useState<number | null>(null);
     const [isSimulating, setIsSimulating] = useState(watchService.isSimulating());
+    const [msgCount, setMsgCount] = useState(0);
 
     useEffect(() => {
         const unsubStatus = watchService.onStatusChange(setStatus);
         const unsubHR = watchService.onHR((reading) => {
             setCurrentBpm(reading.bpm);
+            setMsgCount(watchService.msgCount + watchService.pollCount);
         });
 
         // Try to connect on mount
@@ -162,6 +164,11 @@ export default function HRWidget({ onBaselineComplete, baselineDuration = 20, sh
                     {isSimulating ? 'Stop Simulation' : 'Simulate HR'}
                 </button>
             )}
+
+            {/* Debug info */}
+            <div style={{ marginTop: 8, fontSize: 10, color: '#999', wordBreak: 'break-all' }}>
+                <div>Src: {watchService.source} | Msgs: {msgCount} | Polls: {watchService.pollCount}</div>
+            </div>
         </div>
     );
 }

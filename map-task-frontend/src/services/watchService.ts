@@ -1,4 +1,5 @@
 // Watch Service - Manages WebSocket connection to watch backend for HR data
+// Falls back to REST polling if WebSocket messages aren't arriving
 
 export interface HRReading {
     t: number; // Unix timestamp in ms
@@ -12,24 +13,38 @@ type StatusCallback = (status: 'connected' | 'disconnected' | 'connecting') => v
 class WatchService {
     private ws: WebSocket | null = null;
     private url: string;
+    private restUrl: string; // Base URL for REST API fallback
     private hrCallbacks: HRCallback[] = [];
     private statusCallbacks: StatusCallback[] = [];
     private status: 'connected' | 'disconnected' | 'connecting' = 'disconnected';
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private currentPhase: 'baseline' | 'trial' | 'idle' = 'idle';
 
+    // REST polling fallback
+    private pollTimer: ReturnType<typeof setInterval> | null = null;
+    private wsMessageReceived = false;
+    private pollFallbackStarted = false;
+    private lastPollHr: number | null = null;
+    private lastPollTs: number = 0;
+
     // Stored HR readings
     public readings: HRReading[] = [];
+    public msgCount: number = 0;
+    public pollCount: number = 0;
+    public source: 'ws' | 'poll' | 'sim' | 'none' = 'none';
 
     constructor(url?: string) {
-        // Priority: 1. Constructor arg, 2. Env var, 3. Deployed Render backend (same as watch app)
-        this.url = url
+        const base = url
             || import.meta.env.VITE_WATCH_SERVER_URL
             || 'wss://watch-hr-backend.onrender.com';
+        this.url = base;
+        // Derive REST URL from WS URL (wss:// → https://)
+        this.restUrl = base.replace('wss://', 'https://').replace('ws://', 'http://');
     }
 
     setUrl(url: string) {
         this.url = url;
+        this.restUrl = url.replace('wss://', 'https://').replace('ws://', 'http://');
     }
 
     setPhase(phase: 'baseline' | 'trial' | 'idle') {
@@ -42,25 +57,42 @@ class WatchService {
         }
 
         this.setStatus('connecting');
-        console.log(`[WatchService] Connecting to ${this.url}...`);
+        this.wsMessageReceived = false;
+        console.log(`[WatchService] Connecting WS to ${this.url}...`);
 
         try {
             this.ws = new WebSocket(this.url);
 
             this.ws.onopen = () => {
-                console.log('[WatchService] Connected');
+                console.log('[WatchService] WS Connected');
                 this.setStatus('connected');
                 if (this.reconnectTimer) {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
+
+                // Start polling fallback after 5s if no WS messages arrive
+                setTimeout(() => {
+                    if (!this.wsMessageReceived && !this.pollFallbackStarted) {
+                        console.log('[WatchService] No WS messages after 5s — starting REST poll fallback');
+                        this.startPolling();
+                    }
+                }, 5000);
             };
 
             this.ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    // Expected format from watch: { type: 'sensor', sensor: 'hr', bpm: number, timestamp: number }
-                    // or { event: 'sensor', payload: { sensor: 'hr', bpm: number } }
+                    this.msgCount++;
+                    this.wsMessageReceived = true;
+
+                    // If WS messages are flowing, stop polling
+                    if (this.pollFallbackStarted) {
+                        console.log('[WatchService] WS messages resumed — stopping poll');
+                        this.stopPolling();
+                    }
+                    this.source = 'ws';
+
                     let bpm: number | undefined;
                     let timestamp: number = Date.now();
 
@@ -71,19 +103,15 @@ class WatchService {
                         bpm = data.payload.bpm;
                         timestamp = data.payload.timestamp || Date.now();
                     } else if (data.type === 'HEART_RATE' && Array.isArray(data.values)) {
-                        // Galaxy Watch format
-                        bpm = data.values[0];
+                        bpm = Math.round(data.values[0]);
                         timestamp = data.ts || Date.now();
                     } else if (data.bpm !== undefined) {
-                        // Direct bpm format
                         bpm = data.bpm;
                         timestamp = data.timestamp || Date.now();
                     }
 
                     if (bpm !== undefined && typeof bpm === 'number') {
-                        const reading: HRReading = { t: timestamp, bpm, phase: this.currentPhase };
-                        this.readings.push(reading);
-                        this.hrCallbacks.forEach(cb => cb(reading));
+                        this.pushReading(timestamp, bpm);
                     }
                 } catch (e) {
                     console.error('[WatchService] Parse error:', e);
@@ -91,20 +119,71 @@ class WatchService {
             };
 
             this.ws.onclose = () => {
-                console.log('[WatchService] Disconnected');
+                console.log('[WatchService] WS Disconnected');
                 this.setStatus('disconnected');
                 this.scheduleReconnect();
+                // Keep polling if it's running
+                if (!this.pollFallbackStarted) {
+                    this.startPolling();
+                }
             };
 
             this.ws.onerror = (error) => {
-                console.error('[WatchService] Error:', error);
+                console.error('[WatchService] WS Error:', error);
                 this.setStatus('disconnected');
             };
         } catch (e) {
             console.error('[WatchService] Connection error:', e);
             this.setStatus('disconnected');
             this.scheduleReconnect();
+            this.startPolling();
         }
+    }
+
+    private pushReading(timestamp: number, bpm: number) {
+        const reading: HRReading = { t: timestamp, bpm, phase: this.currentPhase };
+        this.readings.push(reading);
+        this.hrCallbacks.forEach(cb => cb(reading));
+        console.log(`[WatchService] HR: ${bpm} bpm (src: ${this.source}, msgs: ${this.msgCount}, polls: ${this.pollCount})`);
+    }
+
+    // ── REST polling fallback ──
+    private startPolling() {
+        if (this.pollFallbackStarted) return;
+        this.pollFallbackStarted = true;
+        this.source = 'poll';
+        console.log(`[WatchService] Starting REST poll: ${this.restUrl}/api/hr/latest`);
+
+        // Also set status to connected since we can get data via polling
+        this.setStatus('connected');
+
+        this.pollTimer = setInterval(async () => {
+            try {
+                const resp = await fetch(`${this.restUrl}/api/hr/latest`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                // data: { deviceId, ts, hr, ibi }
+                if (data.hr !== undefined && typeof data.hr === 'number') {
+                    // Only emit if the reading is new (different timestamp)
+                    if (data.ts !== this.lastPollTs) {
+                        this.lastPollTs = data.ts;
+                        this.lastPollHr = data.hr;
+                        this.pollCount++;
+                        this.pushReading(data.ts, data.hr);
+                    }
+                }
+            } catch {
+                // Silently ignore fetch errors
+            }
+        }, 2000);
+    }
+
+    private stopPolling() {
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+        }
+        this.pollFallbackStarted = false;
     }
 
     private scheduleReconnect() {
@@ -116,6 +195,7 @@ class WatchService {
     }
 
     disconnect() {
+        this.stopPolling();
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
@@ -134,6 +214,10 @@ class WatchService {
 
     getStatus() {
         return this.status;
+    }
+
+    getUrl() {
+        return this.url;
     }
 
     onHR(callback: HRCallback) {
@@ -158,12 +242,10 @@ class WatchService {
         return [...this.readings];
     }
 
-    // Get readings for a specific trial or baseline
     getReadingsForPhase(phase: 'baseline' | 'trial' | 'idle') {
         return this.readings.filter(r => r.phase === phase);
     }
 
-    // Calculate average HR for baseline
     getBaselineAverage(): number | null {
         const baselineReadings = this.getReadingsForPhase('baseline');
         if (baselineReadings.length === 0) return null;
@@ -178,9 +260,9 @@ class WatchService {
         if (this.simulationInterval) return;
         console.log('[WatchService] Starting HR simulation');
         this.setStatus('connected');
+        this.source = 'sim';
 
         this.simulationInterval = setInterval(() => {
-            // Generate random HR between 60-100 with some variance
             const baseBpm = 72;
             const variance = Math.floor(Math.random() * 20) - 10;
             const bpm = baseBpm + variance;
@@ -196,6 +278,7 @@ class WatchService {
             clearInterval(this.simulationInterval);
             this.simulationInterval = null;
             this.setStatus('disconnected');
+            this.source = 'none';
             console.log('[WatchService] Stopped HR simulation');
         }
     }
