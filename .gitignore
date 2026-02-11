@@ -1,9 +1,9 @@
 # ============================================
-# Node.js Dependencies (SPECIFIC PATHS)
+# Node.js Dependencies
 # ============================================
-backend/node_modules/
+node_modules/
+npm-cache/
 backend/npm-cache/
-map-task-frontend/node_modules/
 map-task-frontend/maptask/
 
 # ============================================
@@ -124,3 +124,12 @@ yarn-debug.log*
 *.old
 *.orig
 .vercel
+
+# ============================================
+# Analysis / Pipeline
+# ============================================
+analysis/__pycache__/
+analysis/data/
+analysis/*.egg-info/
+__pycache__/
+*.pyc

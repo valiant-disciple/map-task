@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 
 const allowed = [
   'localhost',
@@ -8,9 +9,10 @@ const allowed = [
 ];
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), basicSsl()],
   server: {
     host: true,
+    https: true,
     allowedHosts: allowed,
   },
   preview: {

@@ -6,6 +6,8 @@ type Ctx = {
   setSession: (sessionId: string, participantId: string, role: Role) => void;
   setTrial: (trialIndex: number, durationSec: number) => void;
   setMapSet: (mapSet: MapSet) => void;
+  setDuration: (sec: number) => void;
+  setMapOrder: (order: number[]) => void;
   clear: () => void;
 };
 
@@ -16,10 +18,11 @@ const DEFAULTS: SessionState = {
   participantId: null,
   role: null,
   trialIndex: 1,
-  durationSec: 15,
+  durationSec: 300,
   mapSet: 1,
   trialTotal: 8,
   warmupCount: 2,
+  mapOrder: null,
 };
 
 const KEY = 'session';
@@ -65,6 +68,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setMapSet: (mapSet) => {
       setState(prev => {
         const next: SessionState = { ...prev, mapSet };
+        writeSession(next);
+        return next;
+      });
+    },
+    setDuration: (sec) => {
+      setState(prev => {
+        const next: SessionState = { ...prev, durationSec: sec };
+        writeSession(next);
+        return next;
+      });
+    },
+    setMapOrder: (order) => {
+      setState(prev => {
+        const next: SessionState = { ...prev, mapOrder: order };
         writeSession(next);
         return next;
       });

@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import MapViewer from '../components/MapViewer';
 import Toolbar from '../components/Toolbar';
+import TrialSuccessForm from '../components/TrialSuccessForm';
+import type { TrialSuccessData } from '../components/TrialSuccessForm';
 import TLXForm from '../components/TLXForm';
 import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
@@ -19,7 +21,7 @@ import type { EventRecord } from '../types';
 import { getMapSrc } from '../utils/mapAssets';
 
 function rid(len = 8) { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; return Array.from({ length: len }, () => c[Math.floor(Math.random() * c.length)]).join(''); }
-function mapNumber(mapSet: 1 | 2, trialIndex: number) { return (mapSet === 1 ? 0 : 8) + (trialIndex - 1); }
+function mapNumberFallback(mapSet: 1 | 2, trialIndex: number) { return (mapSet === 1 ? 0 : 8) + (trialIndex - 1); }
 
 
 export default function Director() {
@@ -27,6 +29,7 @@ export default function Director() {
   const { state, setTrial, setSession, setMapSet } = useSession();
   const { events, addRaw } = useEventLog();
 
+  const [showTrialSuccess, setShowTrialSuccess] = useState(false);
   const [showTLX, setShowTLX] = useState(false);
   const [showPSMM, setShowPSMM] = useState(false);
   const [formsDone, setFormsDone] = useState(false);
@@ -52,7 +55,17 @@ export default function Director() {
   const hrDataRef = useRef<Map<number, { director: HRReading[]; matcher: HRReading[] }>>(new Map());
   const incomingHRChunksRef = useRef<Map<string, { data: string }>>(new Map());
 
-  // console.log('[Director] Render', { ts: Date.now(), activeTrial: activeTrialRef.current, showTLX, stoppedRemainSec });
+  // Log demographics once on mount
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('demographics');
+      if (raw) {
+        const data = JSON.parse(raw);
+        addRaw({ t: data.submittedAt || Date.now(), type: 'demographics', role: 'director', payload: data });
+        sessionStorage.removeItem('demographics');
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(loc.search);
@@ -80,6 +93,12 @@ export default function Director() {
   };
 
   useEffect(() => {
+    // navigator.mediaDevices is undefined on insecure origins (HTTP + non-localhost IP)
+    if (!navigator.mediaDevices) {
+      console.warn('[Director] navigator.mediaDevices unavailable — page must be served over HTTPS or localhost');
+      return;
+    }
+
     // Initial fetch - may fail if permission not granted yet
     refreshDevices().then(count => {
       // If no devices found, retry after a short delay (user may be granting permission)
@@ -104,7 +123,10 @@ export default function Director() {
     };
   }, []);
 
-  const currentMapNum = mapNumber(state.mapSet, activeTrialRef.current);
+  // Use shuffled map order if available, fallback to sequential
+  const currentMapNum = state.mapOrder
+    ? (state.mapOrder[activeTrialRef.current - 1] ?? mapNumberFallback(state.mapSet, activeTrialRef.current))
+    : mapNumberFallback(state.mapSet, activeTrialRef.current);
   const isDataTrial = activeTrialRef.current > state.warmupCount;
 
   // Derive strokes from Matcher
@@ -183,7 +205,7 @@ export default function Director() {
     // Recompute isDataTrial to avoid stale closure issues
     const currentIsDataTrial = activeTrialRef.current > state.warmupCount;
     if (currentIsDataTrial) {
-      setShowTLX(true);
+      setShowTrialSuccess(true); // Director: TrialSuccess → TLX → PSMM
     }
   };
 
@@ -393,13 +415,14 @@ export default function Director() {
     setStoppedRemainSec(remainNow);
     log('trial_final_time', { remainSec: remainNow, elapsedSec: state.durationSec - remainNow, cause }, 'director');
     await signalTrialEnd(channelRef.current);
-    if (isDataTrial) setShowTLX(true);
+    if (isDataTrial) setShowTrialSuccess(true); // Director: TrialSuccess → TLX → PSMM
   }
 
   function resetForNewTrial(nextIndex: number) {
     endedRef.current = false;
     setStartAt(null);
     setStoppedRemainSec(null);
+    setShowTrialSuccess(false);
     setShowTLX(false);
     setShowPSMM(false);
     setFormsDone(false);
@@ -411,12 +434,19 @@ export default function Director() {
   async function nextTrial() {
     if (activeTrialRef.current < (state.trialTotal ?? 8)) {
       const nextIndex = activeTrialRef.current + 1;
-      const nextMap = mapNumber(state.mapSet, nextIndex);
+      const nextMap = state.mapOrder
+        ? (state.mapOrder[nextIndex - 1] ?? mapNumberFallback(state.mapSet, nextIndex))
+        : mapNumberFallback(state.mapSet, nextIndex);
       resetForNewTrial(nextIndex);
       await signalTrialPrepare(channelRef.current, nextIndex, nextMap);
     }
   }
 
+  function onTrialSuccessSubmit(data: TrialSuccessData) {
+    log('trial_success', data, 'director');
+    setShowTrialSuccess(false);
+    setShowTLX(true); // Next: TLX
+  }
   function onTLXSubmit(v: any) { log('tlx_submit', v, 'director'); setShowTLX(false); setShowPSMM(true); }
   async function onPSMMSubmit(rows: any[]) {
     log('psmm_submit', rows, 'director');
@@ -513,6 +543,7 @@ export default function Director() {
           </div>
         </div>
       </div>
+      <TrialSuccessForm open={showTrialSuccess} onClose={() => setShowTrialSuccess(false)} onSubmit={onTrialSuccessSubmit} trialIndex={activeTrialRef.current} />
       <TLXForm open={showTLX} onClose={() => setShowTLX(false)} onSubmit={onTLXSubmit} />
       <PSMMForm open={showPSMM} onClose={() => setShowPSMM(false)} onSubmit={onPSMMSubmit} />
     </div >

@@ -10,6 +10,7 @@ export interface SessionState {
   mapSet: MapSet;          // 1 or 2
   trialTotal: number;      // 8
   warmupCount: number;     // 2
+  mapOrder: number[] | null; // shuffled map indices for counterbalancing
 }
 
 export interface EventRecord {

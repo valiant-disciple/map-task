@@ -16,7 +16,7 @@ import type { EventRecord } from '../types';
 import { getMapSrc } from '../utils/mapAssets';
 
 function rid(len = 8) { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; return Array.from({ length: len }, () => c[Math.floor(Math.random() * c.length)]).join(''); }
-function mapNumber(mapSet: 1 | 2, trialIndex: number) { return (mapSet === 1 ? 0 : 8) + (trialIndex - 1); }
+function mapNumberFallback(mapSet: 1 | 2, trialIndex: number) { return (mapSet === 1 ? 0 : 8) + (trialIndex - 1); }
 
 
 export default function Matcher() {
@@ -57,6 +57,12 @@ export default function Matcher() {
   };
 
   useEffect(() => {
+    // navigator.mediaDevices is undefined on insecure origins (HTTP + non-localhost IP)
+    if (!navigator.mediaDevices) {
+      console.warn('[Matcher] navigator.mediaDevices unavailable — page must be served over HTTPS or localhost');
+      return;
+    }
+
     // Initial fetch - may fail if permission not granted yet
     refreshDevices().then(count => {
       // If no devices found, retry after a short delay (user may be granting permission)
@@ -81,6 +87,18 @@ export default function Matcher() {
     };
   }, []);
 
+  // Log demographics once on mount
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('demographics');
+      if (raw) {
+        const data = JSON.parse(raw);
+        addRaw({ t: data.submittedAt || Date.now(), type: 'demographics', role: 'matcher', payload: data });
+        sessionStorage.removeItem('demographics');
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(loc.search);
     const sid = params.get('session');
@@ -97,7 +115,10 @@ export default function Matcher() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc.search]);
 
-  const currentMapNum = mapNumber(state.mapSet, activeTrialRef.current);
+  // Use shuffled map order if available, fallback to sequential
+  const currentMapNum = state.mapOrder
+    ? (state.mapOrder[activeTrialRef.current - 1] ?? mapNumberFallback(state.mapSet, activeTrialRef.current))
+    : mapNumberFallback(state.mapSet, activeTrialRef.current);
   const isDataTrial = activeTrialRef.current > state.warmupCount;
 
   const log = (type: string, payload?: any, role?: 'director' | 'matcher') => {

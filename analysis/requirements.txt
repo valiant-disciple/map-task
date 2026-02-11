@@ -1,0 +1,22 @@
+# Post-processing & Dashboard
+streamlit>=1.30.0
+plotly>=5.18.0
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Speech processing
+librosa>=0.10.0
+soundfile>=0.12.0
+pydub>=0.25.1
+openai-whisper>=20231117
+
+# HR processing
+scipy>=1.11.0
+neurokit2>=0.2.7
+
+# Path analysis
+similaritymeasures>=1.1.0
+shapely>=2.0.0
+
+# Utilities
+Pillow>=10.0.0

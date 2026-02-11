@@ -37,6 +37,10 @@ export default function MicCheckWidget({ onConfirm, selectedMicId, devices, onSe
     const startVolumeMeter = useCallback(async () => {
         try {
             if (selectedMicId) {
+                if (!navigator.mediaDevices) {
+                    console.warn('[MicCheck] mediaDevices unavailable (insecure context)');
+                    return;
+                }
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: { deviceId: { exact: selectedMicId } }
                 });

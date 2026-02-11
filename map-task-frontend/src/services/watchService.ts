@@ -22,8 +22,10 @@ class WatchService {
     public readings: HRReading[] = [];
 
     constructor(url?: string) {
-        // Priority: 1. Constructor arg, 2. Env var, 3. Deployed Backend (User provided), 4. Localhost
-        this.url = url || import.meta.env.VITE_WATCH_SERVER_URL || 'wss://watch-hr-backend.onrender.com';
+        // Priority: 1. Constructor arg, 2. Env var, 3. Deployed Render backend (same as watch app)
+        this.url = url
+            || import.meta.env.VITE_WATCH_SERVER_URL
+            || 'wss://watch-hr-backend.onrender.com';
     }
 
     setUrl(url: string) {
