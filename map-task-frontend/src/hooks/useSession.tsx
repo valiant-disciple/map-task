@@ -18,7 +18,7 @@ const DEFAULTS: SessionState = {
   participantId: null,
   role: null,
   trialIndex: 1,
-  durationSec: 300,
+  durationSec: 30,
   mapSet: 1,
   trialTotal: 8,
   warmupCount: 2,

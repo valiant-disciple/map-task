@@ -108,6 +108,24 @@ export default function MicCheckWidget({ onConfirm, selectedMicId, devices, onSe
         };
     }, [stopVolumeMeter]);
 
+    if (!navigator.mediaDevices) {
+        return (
+            <div style={{ padding: 12, border: '1px solid #e53935', borderRadius: 8, backgroundColor: '#ffebee', marginTop: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>🎙️ Mic Check</div>
+                <div style={{ fontSize: 12, color: '#c62828' }}>
+                    ⚠️ Microphone access requires <b>localhost</b>.
+                    <br />Open <a href="http://localhost:5173" style={{ color: '#1565c0' }}>http://localhost:5173</a> instead.
+                </div>
+                <button
+                    onClick={() => { onConfirm(); setIsConfirmed(true); }}
+                    style={{ marginTop: 8, padding: '6px 12px', backgroundColor: '#e3f2fd', border: '1px solid #bbdefb', borderRadius: 4, cursor: 'pointer' }}
+                >
+                    Skip Mic Check
+                </button>
+            </div>
+        );
+    }
+
     if (!browserSupportsSpeechRecognition) {
         return (
             <div style={{ padding: 12, border: '1px solid #ccc', borderRadius: 8, backgroundColor: '#f9f9f9', marginTop: 8 }}>

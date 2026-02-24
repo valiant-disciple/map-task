@@ -47,7 +47,7 @@ export default function Director() {
   const endedRef = useRef(false);
   const activeTrialRef = useRef<number>(state.trialIndex);
   const audioFilesRef = useRef<Map<number, { blob: Blob; filename: string }[]>>(new Map());
-  const incomingChunksRef = useRef<Map<string, { chunks: string[]; total: number }>>(new Map());
+  // (audio now fetched via HTTP, no more WS chunk reassembly)
 
   // HR state
   const [baselineDone, setBaselineDone] = useState(false);
@@ -255,48 +255,26 @@ export default function Director() {
       });
 
 
-      // Handle incoming audio chunks
-      channelRef.current?.on('broadcast', { event: 'audio_chunk' }, ({ payload }) => {
+      // Handle audio_ready signal — fetch audio from backend via HTTP
+      channelRef.current?.on('broadcast', { event: 'audio_ready' }, async ({ payload }) => {
         if (!payload) return;
-        const { trialIndex, chunkIndex, totalChunks, data, filename } = payload;
-        const key = `${trialIndex}_${filename}`;
+        const { trialIndex, filename } = payload;
+        console.log(`[Director] Matcher audio ready: ${filename}, fetching...`);
+        try {
+          const backendUrl = import.meta.env.VITE_WS_URL?.replace('ws://', 'http://').replace('wss://', 'https://') || 'http://localhost:3000';
+          const resp = await fetch(`${backendUrl}/api/audio/${state.sessionId}/${trialIndex}/${filename}`);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const blob = await resp.blob();
+          console.log(`[Director] Fetched ${filename}: ${blob.size} bytes`);
 
-        // Init buffer if new
-        if (!incomingChunksRef.current.has(key)) {
-          incomingChunksRef.current.set(key, { chunks: new Array(totalChunks).fill(''), total: totalChunks });
-        }
-
-        const buffer = incomingChunksRef.current.get(key)!;
-        buffer.chunks[chunkIndex] = data;
-
-        // Check if complete
-        const receivedCount = buffer.chunks.filter(c => c !== '').length;
-        if (chunkIndex % 5 === 0 || receivedCount === totalChunks) { // Log less frequently
-          console.log(`[Director] Rx Audio Chunk ${chunkIndex + 1}/${totalChunks} for ${filename}`);
-        }
-
-        if (receivedCount === totalChunks) {
-          console.log(`[Director] Audio Complete: ${filename}`);
-          // Reassemble
-          const byteCharacters = atob(buffer.chunks.join(''));
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: 'audio/webm' });
-
-          // Store
           const current = audioFilesRef.current.get(trialIndex) || [];
-          // Avoid duplicates
           if (!current.some(f => f.filename === filename)) {
             current.push({ blob, filename });
             audioFilesRef.current.set(trialIndex, current);
           }
-
-          // Cleanup
-          incomingChunksRef.current.delete(key);
           checkAudioSync();
+        } catch (err) {
+          console.error(`[Director] Failed to fetch ${filename}:`, err);
         }
       });
 
@@ -341,20 +319,23 @@ export default function Director() {
     }
   }, [startAt, countdownSec, remainSec, stoppedRemainSec]);
 
-  // Track trials that are missing remote audio
+  // Track per-trial audio status
   const [missingTrials, setMissingTrials] = useState<number[]>([]);
+  const [audioStatus, setAudioStatus] = useState<Record<number, { director: boolean; matcher: boolean }>>({});
 
   function checkAudioSync() {
     const missing: number[] = [];
-    // Check every trial that has ANY audio (meaning it was run)
+    const status: Record<number, { director: boolean; matcher: boolean }> = {};
     for (const [ti, files] of audioFilesRef.current.entries()) {
       const hasDirector = files.some(f => f.filename.includes('director'));
       const hasMatcher = files.some(f => f.filename.includes('matcher'));
-      // If we have local director audio but no matcher audio, it's missing
-      if (hasDirector && !hasMatcher) {
+      status[ti] = { director: hasDirector, matcher: hasMatcher };
+      // Only block download for data trials
+      if (ti > state.warmupCount && hasDirector && !hasMatcher) {
         missing.push(ti);
       }
     }
+    setAudioStatus(status);
     setMissingTrials(missing);
   }
 
@@ -384,8 +365,8 @@ export default function Director() {
       alert('Microphone access failed. Audio will not be recorded.');
     }
 
-    await signalStart(channelRef.current, sAt, activeTrialRef.current, currentMapNum);
-    handleStart({ startAt: sAt, trialIndex: activeTrialRef.current, mapNumber: currentMapNum });
+    await signalStart(channelRef.current, sAt, activeTrialRef.current, currentMapNum, state.durationSec);
+    handleStart({ startAt: sAt, trialIndex: activeTrialRef.current, mapNumber: currentMapNum, durationSec: state.durationSec });
   }
 
   async function endTrialNow(cause: 'manual' | 'timeout' = 'manual') {
@@ -438,7 +419,7 @@ export default function Director() {
         ? (state.mapOrder[nextIndex - 1] ?? mapNumberFallback(state.mapSet, nextIndex))
         : mapNumberFallback(state.mapSet, nextIndex);
       resetForNewTrial(nextIndex);
-      await signalTrialPrepare(channelRef.current, nextIndex, nextMap);
+      await signalTrialPrepare(channelRef.current, nextIndex, nextMap, state.durationSec);
     }
   }
 
@@ -480,8 +461,8 @@ export default function Director() {
   return (
     <div style={{ display: 'flex', gap: 16 }}>
       {/* Sidebar with HR Widget */}
-      {/* Sidebar with HR Widget */}
-      <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Sidebar */}
+      <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <HRWidget onBaselineComplete={onBaselineComplete} baselineDuration={20} showSimToggle={true} />
         <MicCheckWidget
           onConfirm={() => setMicConfirmed(true)}
@@ -490,6 +471,25 @@ export default function Director() {
           onSelectMic={setSelectedMicId}
           onRefreshDevices={refreshDevices}
         />
+        {/* Audio status per trial */}
+        {Object.keys(audioStatus).length > 0 && (
+          <div style={{ border: '1px solid #ccc', borderRadius: 8, padding: 10, backgroundColor: '#fafafa', fontSize: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>🎤 Audio Files</div>
+            {Array.from({ length: total }, (_, i) => i + 1)
+              .filter(ti => ti > state.warmupCount)
+              .map(ti => {
+                const s = audioStatus[ti];
+                const dir = s?.director ? '✅' : '⬜';
+                const mat = s?.matcher ? '✅' : '⏳';
+                return (
+                  <div key={ti} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                    <span>T{ti}</span>
+                    <span>Dir {dir} Mat {mat}</span>
+                  </div>
+                );
+              })}
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
@@ -506,21 +506,26 @@ export default function Director() {
           onEnd={() => endTrialNow('manual')}
           showHere={true}
           showError={false}
+          trialRunning={startAt !== null && stoppedRemainSec === null && countdownSec === 0}
+          trialEnded={stoppedRemainSec !== null}
         />
         <div className="container">
+          {/* Start button — only show before trial is running */}
+          {startAt === null && stoppedRemainSec === null && (
           <div className="row">
             <button
               onClick={startSync}
               disabled={!baselineDone || !micConfirmed}
               style={{
                 backgroundColor: (!baselineDone || !micConfirmed) ? '#ccc' : '#4CAF50',
+                  color: '#fff',
                 cursor: (!baselineDone || !micConfirmed) ? 'not-allowed' : 'pointer'
               }}
             >
               {baselineDone && micConfirmed ? 'Start (3s synced)' : !baselineDone ? 'Complete Baseline First' : 'Complete Mic Check First'}
             </button>
-
           </div>
+          )}
           <MapViewer
             src={getMapSrc('director', currentMapNum)}
             isInteractive={false}
@@ -535,9 +540,9 @@ export default function Director() {
               <button
                 disabled={!canNextData || missingTrials.length > 0}
                 onClick={downloadZip}
-                title={missingTrials.length > 0 ? `Waiting for audio: Trial ${missingTrials.join(', ')}` : 'Download ZIP'}
+                title={missingTrials.length > 0 ? `Waiting for matcher audio: T${missingTrials.join(', ')}` : 'Download ZIP'}
               >
-                {missingTrials.length > 0 ? `Waiting for Audio (T${missingTrials[0]})...` : 'Download ZIP'}
+                {missingTrials.length > 0 ? `Waiting for Audio (T${missingTrials.join(',')})...` : 'Download ZIP'}
               </button>
             )}
           </div>

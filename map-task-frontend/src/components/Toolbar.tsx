@@ -13,6 +13,8 @@ export default function Toolbar({
   onEnd,
   showHere = true,
   showError = true,
+  trialRunning = false,
+  trialEnded = false,
 }: {
   sessionId: string;
   role: string;
@@ -25,9 +27,13 @@ export default function Toolbar({
   onEnd: () => void;
   showHere?: boolean;
   showError?: boolean;
+  trialRunning?: boolean;
+  trialEnded?: boolean;
 }) {
   const showCountdown = (countdownSec ?? 0) > 0 && (countdownSec ?? 0) <= 3;
   const display = showCountdown ? String(countdownSec) : fmtTime(remain);
+
+  const endDisabled = !trialRunning || trialEnded;
 
   return (
     <div className="toolbar">
@@ -40,15 +46,25 @@ export default function Toolbar({
 
       <div className="spacer" />
 
-      {showHere && onHere && <button onClick={onHere}>Here</button>}
+      {showHere && onHere && <button onClick={onHere} disabled={!trialRunning || trialEnded}>Here</button>}
 
-      <button onClick={onToggleMode}>
+      <button onClick={onToggleMode} disabled={!trialRunning || trialEnded}>
         {isErase ? 'Continue' : 'Backtrack'}
       </button>
 
-      {showError && onError && <button onClick={onError}>Error</button>}
+      {showError && onError && <button onClick={onError} disabled={!trialRunning || trialEnded}>Error</button>}
 
-      <button onClick={onEnd}>End Trial</button>
+      <button
+        onClick={onEnd}
+        disabled={endDisabled}
+        style={{
+          backgroundColor: endDisabled ? '#ccc' : '#d33',
+          color: endDisabled ? '#888' : '#fff',
+          cursor: endDisabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        End Trial
+      </button>
     </div>
   );
 }

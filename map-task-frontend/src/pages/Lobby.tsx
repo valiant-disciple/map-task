@@ -14,7 +14,7 @@ export default function Lobby() {
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<Role>('director');
   const [mapSet, setMapSetLocal] = useState<MapSet>(1);
-  const [durationMin, setDurationMin] = useState(5); // default 5 minutes
+  const DURATION_SEC = 30; // Fixed internal duration
   const [randomize, setRandomize] = useState(true); // counterbalance map order
 
   // Two-step: demographics first, then session config
@@ -28,7 +28,7 @@ export default function Lobby() {
     const participantId = rid(8);
     setSession(sessionId, participantId, role);
     setMapSet(mapSet);
-    setDuration(durationMin * 60);
+    setDuration(DURATION_SEC);
 
     // Generate map order: 8 maps per set, first `warmupCount` are warmups
     // Set 1 → maps 0..7, Set 2 → maps 8..15
@@ -97,14 +97,7 @@ export default function Lobby() {
           <option value={1}>Set 1 (maps 0–7)</option>
           <option value={2}>Set 2 (maps 8–15)</option>
         </select>
-        <label>Trial Duration</label>
-        <select value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value))}>
-          <option value={1}>1 min (testing)</option>
-          <option value={3}>3 min</option>
-          <option value={5}>5 min (recommended)</option>
-          <option value={7}>7 min</option>
-          <option value={10}>10 min</option>
-        </select>
+        <p style={{ fontSize: 12, color: '#888', margin: '8px 0 0' }}>Trial duration: {DURATION_SEC}s</p>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={randomize} onChange={(e) => setRandomize(e.target.checked)} />
           Randomize map order (counterbalancing)

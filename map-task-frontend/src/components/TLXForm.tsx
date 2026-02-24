@@ -139,8 +139,8 @@ export default function TLXForm({
                 {values[dim.key]}
               </span>
             </div>
-          </div>
-        ))}
+        </div>
+      ))}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>

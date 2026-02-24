@@ -141,7 +141,7 @@ export default function PSMMForm({
                 <div style={{ fontSize: 10, color: '#aaa', textAlign: 'center', marginTop: 2 }}>
                   {scaleLabels[values[i]]}
                 </div>
-              </div>
+          </div>
             </React.Fragment>
           );
         })}

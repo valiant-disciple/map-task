@@ -84,9 +84,9 @@ export function joinSession(sessionId: string): WSChannel {
   return channel;
 }
 
-export async function signalStart(channel: any, startAt: number, trialIndex: number, mapNumber: number) {
+export async function signalStart(channel: any, startAt: number, trialIndex: number, mapNumber: number, durationSec?: number) {
   if (!channel) return;
-  channel.send({ type: 'broadcast', event: 'start', payload: { startAt, trialIndex, mapNumber } });
+  channel.send({ type: 'broadcast', event: 'start', payload: { startAt, trialIndex, mapNumber, durationSec } });
 }
 
 export async function signalTrialEnd(channel: any) {
@@ -104,9 +104,9 @@ export async function signalEvt(channel: any, rec: EventRecord, from: string) {
   channel.send({ type: 'broadcast', event: 'evt', payload: { rec, from } });
 }
 
-export async function signalTrialPrepare(channel: any, trialIndex: number, mapNumber: number) {
+export async function signalTrialPrepare(channel: any, trialIndex: number, mapNumber: number, durationSec?: number) {
   if (!channel) return;
-  channel.send({ type: 'broadcast', event: 'trial_prepare', payload: { trialIndex, mapNumber, at: Date.now() } });
+  channel.send({ type: 'broadcast', event: 'trial_prepare', payload: { trialIndex, mapNumber, durationSec, at: Date.now() } });
 }
 
 // Uniform sync

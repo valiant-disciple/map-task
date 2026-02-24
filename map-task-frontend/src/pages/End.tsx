@@ -34,9 +34,9 @@ export default function End() {
             ✅ Debrief submitted. Thank you for participating!
           </p>
           <div className="row" style={{ gap: 8 }}>
-            <button onClick={onExport}>Download ZIP</button>
+        <button onClick={onExport}>Download ZIP</button>
             <button onClick={() => { clearLog(); clear(); nav('/'); }}>Back to Lobby</button>
-          </div>
+      </div>
         </>
       ) : (
         <p style={{ color: '#666', fontSize: 13 }}>

@@ -50,6 +50,8 @@ class SocketClient {
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "Closing: $reason")
                 isConnected = false
+                // Reconnect after server-initiated close (e.g. Render redeployment)
+                reconnectHandler.postDelayed({ connect(url) }, 3000)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {

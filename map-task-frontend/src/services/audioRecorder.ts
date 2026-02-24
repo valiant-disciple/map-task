@@ -19,11 +19,12 @@ export class AudioRecorder {
     async getDevices(): Promise<MediaDeviceInfo[]> {
         try {
             if (!navigator.mediaDevices) {
-                console.warn('[AudioRecorder] mediaDevices unavailable (insecure context — use HTTPS or localhost)');
+                console.warn('[AudioRecorder] mediaDevices unavailable — use localhost or HTTPS');
                 return [];
             }
-            // enhance permission prompt if not granted
-            await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Request permission first, then release the stream immediately
+            const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            tempStream.getTracks().forEach(t => t.stop());
             const allDevices = await navigator.mediaDevices.enumerateDevices();
             const inputs = allDevices.filter(d => d.kind === 'audioinput');
             console.log(`[AudioRecorder] Found ${inputs.length} audio inputs`);

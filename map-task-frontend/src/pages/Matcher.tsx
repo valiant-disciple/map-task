@@ -7,7 +7,7 @@ import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalFormSubmitted, signalEvt, signalTrialEnd, signalSyncRequest, signalAudioChunk, signalHRData, signalBaselineComplete } from '../services/realtime';
+import { joinSession, signalFormSubmitted, signalEvt, signalTrialEnd, signalSyncRequest, signalHRData, signalBaselineComplete } from '../services/realtime';
 import { audioRecorder } from '../services/audioRecorder';
 import { watchService, type HRReading } from '../services/watchService';
 import MicCheckWidget from '../components/MicCheckWidget';
@@ -21,7 +21,7 @@ function mapNumberFallback(mapSet: 1 | 2, trialIndex: number) { return (mapSet =
 
 export default function Matcher() {
   const loc = useLocation();
-  const { state, setTrial, setSession, setMapSet } = useSession();
+  const { state, setTrial, setSession, setMapSet, setDuration } = useSession();
   const { addRaw } = useEventLog();
 
   const [showTLX, setShowTLX] = useState(false);
@@ -152,7 +152,10 @@ export default function Matcher() {
     const ti = Number(payload?.trialIndex);
     if (Number.isFinite(ti)) {
       activeTrialRef.current = ti;
-      setTrial(ti, state.durationSec);
+    }
+    // Sync duration from Director
+    if (payload?.durationSec) {
+      setDuration(Number(payload.durationSec));
     }
     if (payload?.startAt) {
       setStartAt(Number(payload.startAt));
@@ -184,51 +187,8 @@ export default function Matcher() {
 
     setStoppedRemainSec(finalRemain);
 
-    // Set HR phase to idle and send HR data to Director
-    watchService.setPhase('idle');
-    const ti = activeTrialRef.current;
-    const trialHR = watchService.getReadingsForPhase('trial');
-    if (trialHR.length > 0) {
-      // Send as CSV string
-      const csvData = trialHR.map(r => `${r.t},${r.bpm},${r.phase}`).join('|');
-      signalHRData(channelRef.current, {
-        trialIndex: ti,
-        role: 'matcher',
-        data: csvData
-      });
-      console.log(`[Matcher] Sent HR data for trial ${ti}: ${trialHR.length} readings`);
-    }
+    stopAndUpload();
 
-    // Stop Recording & Send to Director
-    if (audioRecorder.isRecording()) {
-      audioRecorder.stop().then(async (res) => {
-        console.log('[Matcher] Audio Recorded, sending to Director...', res.blob.size);
-        const reader = new FileReader();
-        reader.readAsDataURL(res.blob);
-        reader.onloadend = async () => {
-          const base64data = (reader.result as string).split(',')[1];
-          const CHUNK_SIZE = 100 * 1024; // 100KB
-          const totalChunks = Math.ceil(base64data.length / CHUNK_SIZE);
-          const trialIndex = activeTrialRef.current;
-
-          for (let i = 0; i < totalChunks; i++) {
-            const chunk = base64data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            await signalAudioChunk(channelRef.current, {
-              trialIndex,
-              chunkIndex: i,
-              totalChunks,
-              data: chunk,
-              filename: `matcher_T${trialIndex}.webm`
-            });
-            // small delay to prevent overflowing websocket buffer
-            await new Promise(r => setTimeout(r, 50));
-          }
-          console.log('[Matcher] Sent all audio chunks');
-        };
-      }).catch(err => console.error('[Matcher] Rec Stop Error', err));
-    }
-
-    // FIX: Recompute isDataTrial to avoid stale closure
     const currentIsDataTrial = activeTrialRef.current > state.warmupCount;
     if (currentIsDataTrial) {
       setShowTLX(true);
@@ -238,10 +198,8 @@ export default function Matcher() {
   const handlePrepare = (payload: any) => {
     const ti = Number(payload?.trialIndex);
     if (ti) {
-      // Reset for new trial
       activeTrialRef.current = ti;
-      setTrial(ti, state.durationSec);
-
+      if (payload?.durationSec) setDuration(Number(payload.durationSec));
       setStartAt(null);
       setStoppedRemainSec(null);
       endedRef.current = false;
@@ -263,9 +221,11 @@ export default function Matcher() {
       channelRef.current?.on('broadcast', { event: 'sync_state' }, ({ payload }) => {
         // Sync response
         if (payload) {
+          if (payload.durationSec) {
+            setDuration(Number(payload.durationSec));
+          }
           if (payload.trialIndex) {
             activeTrialRef.current = Number(payload.trialIndex);
-            setTrial(activeTrialRef.current, state.durationSec);
           }
           if (payload.startAt) {
             setStartAt(Number(payload.startAt));
@@ -300,6 +260,43 @@ export default function Matcher() {
     return () => window.clearInterval(id);
   }, []);
 
+  // --- Shared: stop recording, upload audio & HR ---
+
+  function stopAndUpload() {
+    watchService.setPhase('idle');
+    const ti = activeTrialRef.current;
+
+    // Send HR data to Director
+    const trialHR = watchService.getReadingsForPhase('trial');
+    if (trialHR.length > 0) {
+      const csvData = trialHR.map(r => `${r.t},${r.bpm},${r.phase}`).join('|');
+      signalHRData(channelRef.current, { trialIndex: ti, role: 'matcher', data: csvData });
+      console.log(`[Matcher] Sent HR data for trial ${ti}: ${trialHR.length} readings`);
+    }
+
+    // Stop recording & upload audio via HTTP
+    if (audioRecorder.isRecording()) {
+      audioRecorder.stop().then(async (res) => {
+        const trialIndex = activeTrialRef.current;
+        const filename = `matcher_T${trialIndex}.webm`;
+        console.log(`[Matcher] Audio recorded (${res.blob.size} bytes), uploading ${filename}...`);
+        try {
+          const backendUrl = import.meta.env.VITE_WS_URL?.replace('ws://', 'http://').replace('wss://', 'https://') || 'http://localhost:3000';
+          const resp = await fetch(`${backendUrl}/api/audio/${state.sessionId}/${trialIndex}`, {
+            method: 'POST',
+            headers: { 'x-role': 'matcher', 'x-filename': filename },
+            body: res.blob,
+          });
+          const data = await resp.json();
+          console.log(`[Matcher] Audio uploaded: ${filename}`, data);
+          channelRef.current?.send({ type: 'broadcast', event: 'audio_ready', payload: { trialIndex, role: 'matcher', filename } });
+        } catch (err) {
+          console.error('[Matcher] Audio upload failed:', err);
+        }
+      }).catch(err => console.error('[Matcher] Rec Stop Error', err));
+    }
+  }
+
   // --- Actions ---
 
   async function endTrialNow(cause: 'manual' | 'timeout' = 'manual') {
@@ -308,6 +305,7 @@ export default function Matcher() {
     const remainNow = computeRemainSec();
     setStoppedRemainSec(remainNow);
     log('trial_final_time', { remainSec: remainNow, elapsedSec: state.durationSec - remainNow, cause }, 'matcher');
+    stopAndUpload();
     await signalTrialEnd(channelRef.current);
     if (isDataTrial) setShowTLX(true);
   }
@@ -370,6 +368,8 @@ export default function Matcher() {
           onEnd={() => endTrialNow('manual')}
           showHere={false}
           showError={false}
+          trialRunning={startAt !== null && stoppedRemainSec === null && countdownSec === 0}
+          trialEnded={stoppedRemainSec !== null}
         />
         <div className="container" style={{ display: 'flex', gap: 20 }}>
           <div style={{ flex: 1 }}>

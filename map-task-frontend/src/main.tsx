@@ -8,11 +8,11 @@ import ErrorBoundary from './components/ErrorBoundary';
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        <SessionProvider>
-          <App />
-        </SessionProvider>
-      </BrowserRouter>
+    <BrowserRouter>
+      <SessionProvider>
+        <App />
+      </SessionProvider>
+    </BrowserRouter>
     </ErrorBoundary>
   </React.StrictMode>
 );

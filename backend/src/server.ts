@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { errorHandler } from './middleware/error.js';
 import { healthRouter } from './routes/health.js';
 import { hrRouter } from './routes/hr.js';
+import { audioRouter } from './routes/audio.js';
 
 export function createServer() {
   const app = express();
@@ -14,6 +15,7 @@ export function createServer() {
 
   app.use('/healthz', healthRouter);
   app.use('/api/hr', hrRouter);
+  app.use('/api/audio', audioRouter);
 
   app.use(errorHandler);
   return app;
