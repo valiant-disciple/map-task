@@ -37,6 +37,9 @@ export default function Matcher() {
   const endedRef = useRef(false);
   const activeTrialRef = useRef<number>(state.trialIndex);
 
+  // Map number synced from Director (overrides local mapOrder)
+  const [mapNumberOverride, setMapNumberOverride] = useState<number | null>(null);
+
   // Audio state
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState<string>('');
@@ -115,10 +118,12 @@ export default function Matcher() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc.search]);
 
-  // Use shuffled map order if available, fallback to sequential
-  const currentMapNum = state.mapOrder
-    ? (state.mapOrder[activeTrialRef.current - 1] ?? mapNumberFallback(state.mapSet, activeTrialRef.current))
-    : mapNumberFallback(state.mapSet, activeTrialRef.current);
+  // Use Director's map number if synced, otherwise fall back to local order
+  const currentMapNum = mapNumberOverride !== null
+    ? mapNumberOverride
+    : (state.mapOrder
+        ? (state.mapOrder[activeTrialRef.current - 1] ?? mapNumberFallback(state.mapSet, activeTrialRef.current))
+        : mapNumberFallback(state.mapSet, activeTrialRef.current));
   const isDataTrial = activeTrialRef.current > state.warmupCount;
 
   const log = (type: string, payload?: any, role?: 'director' | 'matcher') => {
@@ -152,6 +157,11 @@ export default function Matcher() {
     const ti = Number(payload?.trialIndex);
     if (Number.isFinite(ti)) {
       activeTrialRef.current = ti;
+    }
+    // Sync map number from Director
+    if (payload?.mapNumber !== undefined) {
+      setMapNumberOverride(Number(payload.mapNumber));
+      console.log(`[Matcher] Synced mapNumber=${payload.mapNumber} from Director`);
     }
     // Sync duration from Director
     if (payload?.durationSec) {
@@ -200,6 +210,11 @@ export default function Matcher() {
     if (ti) {
       activeTrialRef.current = ti;
       if (payload?.durationSec) setDuration(Number(payload.durationSec));
+      // Sync map number from Director for the upcoming trial
+      if (payload?.mapNumber !== undefined) {
+        setMapNumberOverride(Number(payload.mapNumber));
+        console.log(`[Matcher] Prepare: synced mapNumber=${payload.mapNumber} from Director`);
+      }
       setStartAt(null);
       setStoppedRemainSec(null);
       endedRef.current = false;
@@ -227,12 +242,16 @@ export default function Matcher() {
           if (payload.trialIndex) {
             activeTrialRef.current = Number(payload.trialIndex);
           }
+          // Sync map number from Director
+          if (payload.mapNumber !== undefined) {
+            setMapNumberOverride(Number(payload.mapNumber));
+            console.log(`[Matcher] Sync: synced mapNumber=${payload.mapNumber} from Director`);
+          }
           if (payload.startAt) {
             setStartAt(Number(payload.startAt));
             setStoppedRemainSec(null);
             endedRef.current = false;
           }
-          // Could also sync 'ended' state if we passed it
         }
       });
 
