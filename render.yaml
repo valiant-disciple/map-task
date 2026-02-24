@@ -13,11 +13,11 @@ services:
         value: "*"
     autoDeploy: true
 
-  - type: static
-    name: map-task-frontend
+staticSites:
+  - name: map-task-frontend
     rootDir: map-task-frontend
     buildCommand: npm install && npm run build
-    publishDir: dist
+    staticPublishPath: dist
     envVars:
       - key: VITE_WS_URL
         value: wss://watch-hr-backend.onrender.com
