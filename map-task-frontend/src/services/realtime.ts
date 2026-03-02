@@ -3,22 +3,42 @@ import type { EventRecord } from '../types';
 
 // Use standard WebSocket — configurable via VITE_WS_URL env var
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+const WS_URL_DIRECTOR = import.meta.env.VITE_WS_URL_DIRECTOR || WS_URL;
+const WS_URL_MATCHER = import.meta.env.VITE_WS_URL_MATCHER || WS_URL;
+
+type Role = 'director' | 'matcher';
+
+function toHttp(url: string) {
+  return url.replace('ws://', 'http://').replace('wss://', 'https://');
+}
+
+export function getWsUrlForRole(role?: Role) {
+  if (role === 'director') return WS_URL_DIRECTOR;
+  if (role === 'matcher') return WS_URL_MATCHER;
+  return WS_URL;
+}
+
+export function getBackendHttpBase(role?: Role) {
+  return toHttp(getWsUrlForRole(role));
+}
 
 class WSChannel {
   ws: WebSocket | null = null;
   sessionId: string;
+  url: string;
   handlers: Array<{ event: string; cb: (arg: any) => void }> = [];
   queue: string[] = [];
   isConnected = false;
 
-  constructor(sessionId: string) {
+  constructor(sessionId: string, url: string) {
     this.sessionId = sessionId;
+    this.url = url;
     this.connect();
   }
 
   connect() {
-    console.log(`[WS] Connecting to ${WS_URL} for session ${this.sessionId}`);
-    this.ws = new WebSocket(WS_URL);
+    console.log(`[WS] Connecting to ${this.url} for session ${this.sessionId}`);
+    this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
       console.log('[WS] Connected');
@@ -74,13 +94,15 @@ class WSChannel {
   }
 }
 
-// Singleton map to reuse channels per session
+// Singleton map to reuse channels per session + URL
 const channels = new Map<string, WSChannel>();
 
-export function joinSession(sessionId: string): WSChannel {
-  if (channels.has(sessionId)) return channels.get(sessionId)!;
-  const channel = new WSChannel(sessionId);
-  channels.set(sessionId, channel);
+export function joinSession(sessionId: string, role?: Role): WSChannel {
+  const url = getWsUrlForRole(role);
+  const key = `${url}::${sessionId}`;
+  if (channels.has(key)) return channels.get(key)!;
+  const channel = new WSChannel(sessionId, url);
+  channels.set(key, channel);
   return channel;
 }
 

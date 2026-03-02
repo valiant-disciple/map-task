@@ -9,7 +9,7 @@ import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalEvt, signalTrialPrepare, signalSyncState, signalBaselineStart } from '../services/realtime';
+import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalEvt, signalTrialPrepare, signalSyncState, signalBaselineStart, getBackendHttpBase } from '../services/realtime';
 import type { SyncPhase, SyncState } from '../services/realtime';
 import { downloadSessionZip } from '../utils/zip';
 import { audioRecorder } from '../services/audioRecorder';
@@ -28,6 +28,7 @@ export default function Director() {
   const loc = useLocation();
   const { state, setTrial, setSession, setMapSet } = useSession();
   const { events, addRaw } = useEventLog();
+  const directorBackendUrl = getBackendHttpBase('director');
 
   const [showTrialSuccess, setShowTrialSuccess] = useState(false);
   const [showTLX, setShowTLX] = useState(false);
@@ -234,7 +235,7 @@ export default function Director() {
     setTrial(activeTrialRef.current, state.durationSec);
 
     if (state.sessionId && state.participantId) {
-      channelRef.current = joinSession(state.sessionId);
+      channelRef.current = joinSession(state.sessionId, 'director');
 
       channelRef.current?.on('broadcast', { event: 'start' }, ({ payload }) => handleStart(payload));
       channelRef.current?.on('broadcast', { event: 'trial_end' }, ({ payload }) => {
@@ -261,7 +262,7 @@ export default function Director() {
         const { trialIndex, filename } = payload;
         console.log(`[Director] Matcher audio ready: ${filename}, fetching...`);
         try {
-          const backendUrl = import.meta.env.VITE_WS_URL?.replace('ws://', 'http://').replace('wss://', 'https://') || 'http://localhost:3000';
+          const backendUrl = directorBackendUrl;
           const resp = await fetch(`${backendUrl}/api/audio/${state.sessionId}/${trialIndex}/${filename}`);
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const blob = await resp.blob();

@@ -7,7 +7,7 @@ import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalFormSubmitted, signalEvt, signalTrialEnd, signalSyncRequest, signalHRData, signalBaselineComplete } from '../services/realtime';
+import { joinSession, signalFormSubmitted, signalEvt, signalTrialEnd, signalSyncRequest, signalHRData, signalBaselineComplete, getBackendHttpBase } from '../services/realtime';
 import { audioRecorder } from '../services/audioRecorder';
 import { watchService, type HRReading } from '../services/watchService';
 import MicCheckWidget from '../components/MicCheckWidget';
@@ -23,6 +23,7 @@ export default function Matcher() {
   const loc = useLocation();
   const { state, setTrial, setSession, setMapSet, setDuration } = useSession();
   const { addRaw } = useEventLog();
+  const matcherBackendUrl = getBackendHttpBase('matcher');
 
   const [showTLX, setShowTLX] = useState(false);
   const [showPSMM, setShowPSMM] = useState(false);
@@ -227,7 +228,7 @@ export default function Matcher() {
     setTrial(activeTrialRef.current, state.durationSec);
 
     if (state.sessionId && state.participantId) {
-      channelRef.current = joinSession(state.sessionId);
+      channelRef.current = joinSession(state.sessionId, 'matcher');
 
       channelRef.current?.on('broadcast', { event: 'start' }, ({ payload }) => handleStart(payload));
       channelRef.current?.on('broadcast', { event: 'trial_end' }, ({ payload }) => handleTrialEnd(payload));
@@ -300,7 +301,7 @@ export default function Matcher() {
         const filename = `matcher_T${trialIndex}.webm`;
         console.log(`[Matcher] Audio recorded (${res.blob.size} bytes), uploading ${filename}...`);
         try {
-          const backendUrl = import.meta.env.VITE_WS_URL?.replace('ws://', 'http://').replace('wss://', 'https://') || 'http://localhost:3000';
+          const backendUrl = matcherBackendUrl;
           const resp = await fetch(`${backendUrl}/api/audio/${state.sessionId}/${trialIndex}`, {
             method: 'POST',
             headers: { 'x-role': 'matcher', 'x-filename': filename },
