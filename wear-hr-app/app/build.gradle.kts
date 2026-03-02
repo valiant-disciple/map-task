@@ -16,8 +16,8 @@ android {
         vectorDrawables.useSupportLibrary = true
 
         // Production Render backends:
-        // - Director: wss://watch-hr-backend-u96c.onrender.com
-        // - Matcher: wss://watch-hr-backend-matcher-u96c.onrender.com
+        // - Director (existing): wss://watch-hr-backend.onrender.com
+        // - Matcher (new): wss://watch-hr-backend-matcher-u96c.onrender.com
         //
         // Set this build to the matcher backend for the new watch:
         buildConfigField("String", "BASE_URL", "\"wss://watch-hr-backend-matcher-u96c.onrender.com\"")
