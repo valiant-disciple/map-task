@@ -9,7 +9,10 @@ export interface HRReading {
 type HRCallback = (reading: HRReading) => void;
 type StatusCallback = (status: 'connected' | 'disconnected' | 'connecting') => void;
 
-const RENDER_URL = 'https://watch-hr-backend.onrender.com';
+// Resolve watch backend base from env and force HTTP(S) for REST polling.
+const WATCH_BASE = (import.meta.env.VITE_WATCH_SERVER_URL || import.meta.env.VITE_WS_URL || 'http://localhost:3000')
+  .replace('ws://', 'http://')
+  .replace('wss://', 'https://');
 
 class WatchService {
     private hrCallbacks: HRCallback[] = [];
@@ -33,7 +36,7 @@ class WatchService {
 
         this.pollTimer = setInterval(async () => {
             try {
-                const resp = await fetch(`${RENDER_URL}/api/hr/latest`);
+                const resp = await fetch(`${WATCH_BASE}/api/hr/latest`);
                 if (!resp.ok) return;
                 const data = await resp.json();
                 if (data.hr && data.ts !== this.lastTs) {
