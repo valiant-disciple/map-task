@@ -2,9 +2,9 @@
 import type { EventRecord } from '../types';
 
 // Use standard WebSocket — configurable via VITE_WS_URL env var
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
-const WS_URL_DIRECTOR = import.meta.env.VITE_WS_URL_DIRECTOR || WS_URL;
-const WS_URL_MATCHER = import.meta.env.VITE_WS_URL_MATCHER || WS_URL;
+const WS_URL = import.meta.env.VITE_WS_URL || '';
+const WS_URL_DIRECTOR = import.meta.env.VITE_WS_URL_DIRECTOR || '';
+const WS_URL_MATCHER = import.meta.env.VITE_WS_URL_MATCHER || '';
 
 type Role = 'director' | 'matcher';
 
@@ -13,8 +13,15 @@ function toHttp(url: string) {
 }
 
 export function getWsUrlForRole(role?: Role) {
-  if (role === 'director') return WS_URL_DIRECTOR;
-  if (role === 'matcher') return WS_URL_MATCHER;
+  if (role === 'director') {
+    if (!WS_URL_DIRECTOR) throw new Error('VITE_WS_URL_DIRECTOR is missing');
+    return WS_URL_DIRECTOR;
+  }
+  if (role === 'matcher') {
+    if (!WS_URL_MATCHER) throw new Error('VITE_WS_URL_MATCHER is missing');
+    return WS_URL_MATCHER;
+  }
+  if (!WS_URL) throw new Error('VITE_WS_URL is missing');
   return WS_URL;
 }
 
