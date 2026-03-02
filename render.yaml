@@ -40,5 +40,5 @@ services:
       - key: VITE_WS_URL_DIRECTOR
         value: wss://watch-hr-backend.onrender.com
       - key: VITE_WS_URL_MATCHER
-        value: wss://watch-hr-backend-matcher.onrender.com
+        value: wss://watch-hr-backend-matcher-u96c.onrender.com
     autoDeploy: true

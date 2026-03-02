@@ -15,9 +15,12 @@ android {
         versionName = "1.0"
         vectorDrawables.useSupportLibrary = true
 
-        // Set to your ngrok HTTPS URL
-        // Production Render Backend
-        buildConfigField("String", "BASE_URL", "\"wss://watch-hr-backend.onrender.com\"")
+        // Production Render backends:
+        // - Director (existing): wss://watch-hr-backend.onrender.com
+        // - Matcher (new): wss://watch-hr-backend-matcher-u96c.onrender.com
+        //
+        // Set this build to the matcher backend for the new watch:
+        buildConfigField("String", "BASE_URL", "\"wss://watch-hr-backend-matcher-u96c.onrender.com\"")
     }
 
     buildFeatures {
