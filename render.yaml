@@ -36,9 +36,9 @@ services:
     startCommand: serve dist -s -l $PORT
     envVars:
       - key: VITE_WS_URL
-        value: wss://watch-hr-backend.onrender.com
+        value: wss://watch-hr-backend-u96c.onrender.com
       - key: VITE_WS_URL_DIRECTOR
-        value: wss://watch-hr-backend.onrender.com
+        value: wss://watch-hr-backend-u96c.onrender.com
       - key: VITE_WS_URL_MATCHER
         value: wss://watch-hr-backend-matcher-u96c.onrender.com
     autoDeploy: true
