@@ -22,6 +22,12 @@ function resolveBase(role?: 'director' | 'matcher') {
     return base.replace('ws://', 'http://').replace('wss://', 'https://');
 }
 
+function resolveDeviceId(role?: 'director' | 'matcher') {
+    if (role === 'director') return import.meta.env.VITE_WATCH_DEVICE_ID_DIRECTOR;
+    if (role === 'matcher') return import.meta.env.VITE_WATCH_DEVICE_ID_MATCHER;
+    return import.meta.env.VITE_WATCH_DEVICE_ID;
+}
+
 class WatchService {
     private hrCallbacks: HRCallback[] = [];
     private statusCallbacks: StatusCallback[] = [];
@@ -32,6 +38,7 @@ class WatchService {
     private base: string = (() => {
         try { return resolveBase(); } catch { return ''; }
     })();
+    private deviceId: string | undefined = resolveDeviceId();
     public readings: HRReading[] = [];
 
     // Simulation
@@ -51,7 +58,8 @@ class WatchService {
 
         this.pollTimer = setInterval(async () => {
             try {
-                const resp = await fetch(`${this.base}/api/hr/latest`);
+                const qp = this.deviceId ? `?deviceId=${encodeURIComponent(this.deviceId)}` : '';
+                const resp = await fetch(`${this.base}/api/hr/latest${qp}`);
                 if (!resp.ok) return;
                 const data = await resp.json();
                 if (data.hr && data.ts !== this.lastTs) {
@@ -132,6 +140,7 @@ class WatchService {
 
     setBaseForRole(role: 'director' | 'matcher') {
         this.setBase(resolveBase(role));
+        this.deviceId = resolveDeviceId(role);
     }
 }
 
