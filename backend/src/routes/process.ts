@@ -2,12 +2,12 @@ import { Router } from 'express';
 import multer from 'multer';
 import JSZip from 'jszip';
 import { computeMapAccuracy } from '../utils/mapAccuracy.js';
-import { computeMdrqa } from '../utils/mdrqa.js';
 import { toWav, transcribeSmallestAI } from '../utils/asr.js';
 import sharp from 'sharp';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { spawn } from 'child_process';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
@@ -118,11 +118,32 @@ router.post('/process-zip', upload.single('file'), async (req, res) => {
         }
       }
 
-      // HR mdrqa
-      const hrMetrics: Record<string, any> = {};
-      const eps = 1; // threshold in bpm
-      if (tb.hr.director.length) hrMetrics.director = computeMdrqa(tb.hr.director, eps);
-      if (tb.hr.matcher.length) hrMetrics.matcher = computeMdrqa(tb.hr.matcher, eps);
+    // HR mdrqa via Python helper
+    const hrMetrics: Record<string, any> = {};
+    async function runMdrqa(series: number[]) {
+      return await new Promise<any>((resolve) => {
+        const py = spawn('python3', [path.join(path.dirname(fileURLToPath(import.meta.url)), '../../scripts/mdrqa.py')]);
+        let out = '';
+        let err = '';
+        py.stdout.on('data', d => out += d.toString());
+        py.stderr.on('data', d => err += d.toString());
+        py.on('close', () => {
+          if (err) {
+            resolve({ error: err.trim() });
+            return;
+          }
+          try {
+            resolve(JSON.parse(out));
+          } catch (e: any) {
+            resolve({ error: e?.message || 'mdrqa parse failed' });
+          }
+        });
+        py.stdin.write(JSON.stringify({ series, embedding: 1, delay: 1, radius: 0.1 }));
+        py.stdin.end();
+      });
+    }
+    if (tb.hr.director.length) hrMetrics.director = await runMdrqa(tb.hr.director);
+    if (tb.hr.matcher.length) hrMetrics.matcher = await runMdrqa(tb.hr.matcher);
 
       results.push({
         trialIndex: ti,
