@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Replay Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    pre { background: #f7f7f7; padding: 8px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h2>Replay Dashboard (Offline)</h2>
+  <p>Upload the session ZIP to run ASR, HR mdrqa, and map accuracy. Ground truth maps: director g-maps.</p>
+  <div class="card">
+    <input type="file" id="file" accept=".zip" />
+    <button id="btn">Process ZIP</button>
+    <div id="status" style="color:#c00;margin-top:8px;"></div>
+  </div>
+  <div id="results"></div>
+
+  <script>
+    const fileInput = document.getElementById('file');
+    const btn = document.getElementById('btn');
+    const statusEl = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+
+    btn.onclick = async () => {
+      const f = fileInput.files[0];
+      if (!f) { statusEl.textContent = 'Please choose a ZIP.'; return; }
+      statusEl.textContent = 'Processing...';
+      resultsEl.innerHTML = '';
+      const fd = new FormData();
+      fd.append('file', f);
+      try {
+        const resp = await fetch('/api/process-zip', { method: 'POST', body: fd });
+        if (!resp.ok) throw new Error(await resp.text());
+        const json = await resp.json();
+        statusEl.textContent = 'Done';
+        render(json.trials || []);
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + (e.message || e);
+      }
+    };
+
+    function render(trials) {
+      resultsEl.innerHTML = '';
+      trials.forEach(t => {
+        const div = document.createElement('div');
+        div.className = 'card';
+        const acc = t.mapAccuracy || {};
+        div.innerHTML = `
+          <div><strong>Trial ${t.trialIndex}</strong> (map ${t.mapNumber})</div>
+          <div>Map accuracy: IoU=${(acc.iou||0).toFixed(3)}, F1=${(acc.f1||0).toFixed(3)}, Dice=${(acc.dice||0).toFixed(3)}, SSIM=${(acc.ssim||0).toFixed(3)}, HD=${(acc.hausdorff||0).toFixed(3)}</div>
+          <div>HR mdrqa:</div>
+          <pre>${JSON.stringify(t.hrMetrics, null, 2)}</pre>
+          <div>Transcripts:</div>
+          <pre>${JSON.stringify(t.transcripts, null, 2)}</pre>
+        `;
+        resultsEl.appendChild(div);
+      });
+    }
+  </script>
+</body>
+</html>
