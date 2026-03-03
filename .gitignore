@@ -42,6 +42,15 @@ map-task-frontend/.vite/
 map-task-frontend/.env
 map-task-frontend/.env.local
 
+# Standalone replay dashboard (keep local/offline)
+replay-dashboard/
+
+# Android/Wear build artifacts
+wear-hr-app/.gradle/
+wear-hr-app/app/build/
+wear-hr-app/.idea/
+wear-hr-app/local.properties
+
 # ============================================
 # Python (Data Structures directory)
 # ============================================
