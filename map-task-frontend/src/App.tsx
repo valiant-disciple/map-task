@@ -4,6 +4,7 @@ import Lobby from './pages/Lobby';
 import Director from './pages/Director';
 import Matcher from './pages/Matcher';
 import End from './pages/End';
+import Dashboard from './pages/Dashboard';
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
       <Route path="/director" element={<Director />} />
       <Route path="/matcher" element={<Matcher />} />
       <Route path="/end" element={<End />} />
+      <Route path="/dashboard" element={<Dashboard />} />
     </Routes>
   );
 }
