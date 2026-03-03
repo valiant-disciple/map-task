@@ -118,9 +118,15 @@ router.post('/process-zip', upload.single('file'), async (req, res) => {
         }
       }
 
-    // HR mdrqa via Python helper
+    // HR mdrqa via Python helper (multiple parameter sets)
     const hrMetrics: Record<string, any> = {};
-    async function runMdrqa(series: number[]) {
+    const paramSets = [
+      { embedding: 1, delay: 1, radius: 0.05 },
+      { embedding: 1, delay: 1, radius: 0.1 },
+      { embedding: 1, delay: 1, radius: 0.2 },
+      { embedding: 2, delay: 1, radius: 0.1 },
+    ];
+    async function runMdrqa(series: number[], params: { embedding: number; delay: number; radius: number }) {
       return await new Promise<any>((resolve) => {
         const py = spawn('python3', [path.join(path.dirname(fileURLToPath(import.meta.url)), '../../scripts/mdrqa.py')]);
         let out = '';
@@ -129,21 +135,28 @@ router.post('/process-zip', upload.single('file'), async (req, res) => {
         py.stderr.on('data', d => err += d.toString());
         py.on('close', () => {
           if (err) {
-            resolve({ error: err.trim() });
+            resolve({ error: err.trim(), params });
             return;
           }
           try {
-            resolve(JSON.parse(out));
+            const parsed = JSON.parse(out);
+            resolve({ ...parsed, params });
           } catch (e: any) {
-            resolve({ error: e?.message || 'mdrqa parse failed' });
+            resolve({ error: e?.message || 'mdrqa parse failed', params });
           }
         });
-        py.stdin.write(JSON.stringify({ series, embedding: 1, delay: 1, radius: 0.1 }));
+        py.stdin.write(JSON.stringify({ series, embedding: params.embedding, delay: params.delay, radius: params.radius }));
         py.stdin.end();
       });
     }
-    if (tb.hr.director.length) hrMetrics.director = await runMdrqa(tb.hr.director);
-    if (tb.hr.matcher.length) hrMetrics.matcher = await runMdrqa(tb.hr.matcher);
+    if (tb.hr.director.length) {
+      hrMetrics.director = [];
+      for (const p of paramSets) hrMetrics.director.push(await runMdrqa(tb.hr.director, p));
+    }
+    if (tb.hr.matcher.length) {
+      hrMetrics.matcher = [];
+      for (const p of paramSets) hrMetrics.matcher.push(await runMdrqa(tb.hr.matcher, p));
+    }
 
       results.push({
         trialIndex: ti,

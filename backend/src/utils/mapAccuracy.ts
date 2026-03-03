@@ -43,7 +43,7 @@ async function strokesToMask(strokes: Stroke[], width: number, height: number): 
   });
 }
 
-function binaryMetrics(gt: Buffer, pred: Buffer): { iou: number; precision: number; recall: number; f1: number } {
+function binaryMetrics(gt: Buffer, pred: Buffer): { iou: number; precision: number; recall: number; f1: number; dice: number } {
   const n = gt.length;
   let tp = 0, fp = 0, fn = 0;
   for (let i = 0; i < n; i++) {
@@ -58,7 +58,8 @@ function binaryMetrics(gt: Buffer, pred: Buffer): { iou: number; precision: numb
   const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
   const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
   const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
-  return { iou, precision, recall, f1 };
+  const dice = f1;
+  return { iou, precision, recall, f1, dice };
 }
 
 function ssim(gt: Buffer, pred: Buffer): number {
