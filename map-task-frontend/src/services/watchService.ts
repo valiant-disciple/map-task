@@ -10,9 +10,17 @@ type HRCallback = (reading: HRReading) => void;
 type StatusCallback = (status: 'connected' | 'disconnected' | 'connecting') => void;
 
 // Resolve watch backend base from env and force HTTP(S) for REST polling.
-const WATCH_BASE = (import.meta.env.VITE_WATCH_SERVER_URL || import.meta.env.VITE_WS_URL || 'http://localhost:3000')
-  .replace('ws://', 'http://')
-  .replace('wss://', 'https://');
+function resolveBase(role?: 'director' | 'matcher') {
+    let base: string | undefined;
+    if (role === 'director') base = import.meta.env.VITE_WATCH_SERVER_URL_DIRECTOR;
+    else if (role === 'matcher') base = import.meta.env.VITE_WATCH_SERVER_URL_MATCHER;
+    else base = import.meta.env.VITE_WATCH_SERVER_URL;
+
+    if (!base) {
+        throw new Error(`Watch backend URL missing for role ${role || 'unknown'}. Set VITE_WATCH_SERVER_URL_${role?.toUpperCase?.() || 'DIRECTOR/MATCHER'}.`);
+    }
+    return base.replace('ws://', 'http://').replace('wss://', 'https://');
+}
 
 class WatchService {
     private hrCallbacks: HRCallback[] = [];
@@ -21,6 +29,9 @@ class WatchService {
     private currentPhase: 'baseline' | 'trial' | 'idle' = 'idle';
     private pollTimer: ReturnType<typeof setInterval> | null = null;
     private lastTs: number = 0;
+    private base: string = (() => {
+        try { return resolveBase(); } catch { return ''; }
+    })();
     public readings: HRReading[] = [];
 
     // Simulation
@@ -32,11 +43,15 @@ class WatchService {
 
     connect() {
         if (this.pollTimer) return;
+        if (!this.base) {
+            this.setStatus('disconnected');
+            return;
+        }
         this.setStatus('connecting');
 
         this.pollTimer = setInterval(async () => {
             try {
-                const resp = await fetch(`${WATCH_BASE}/api/hr/latest`);
+                const resp = await fetch(`${this.base}/api/hr/latest`);
                 if (!resp.ok) return;
                 const data = await resp.json();
                 if (data.hr && data.ts !== this.lastTs) {
@@ -106,6 +121,18 @@ class WatchService {
     }
 
     isSimulating() { return this.simulationInterval !== null; }
+
+    setBase(url: string) {
+        if (this.base === url) return;
+        this.base = url;
+        this.disconnect();
+        this.lastTs = 0;
+        this.connect();
+    }
+
+    setBaseForRole(role: 'director' | 'matcher') {
+        this.setBase(resolveBase(role));
+    }
 }
 
 export const watchService = new WatchService();

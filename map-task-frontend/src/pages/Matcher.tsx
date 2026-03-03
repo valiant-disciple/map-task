@@ -14,6 +14,7 @@ import MicCheckWidget from '../components/MicCheckWidget';
 import type { EventRecord } from '../types';
 
 import { getMapSrc } from '../utils/mapAssets';
+import { watchService } from '../services/watchService';
 
 function rid(len = 8) { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; return Array.from({ length: len }, () => c[Math.floor(Math.random() * c.length)]).join(''); }
 function mapNumberFallback(mapSet: 1 | 2, trialIndex: number) { return (mapSet === 1 ? 0 : 8) + (trialIndex - 1); }
@@ -59,6 +60,10 @@ export default function Matcher() {
     if (devs.length > 0 && !selectedMicId) setSelectedMicId(devs[0].deviceId);
     return devs.length;
   };
+
+  useEffect(() => {
+    watchService.setBaseForRole('matcher');
+  }, []);
 
   useEffect(() => {
     // navigator.mediaDevices is undefined on insecure origins (HTTP + non-localhost IP)
