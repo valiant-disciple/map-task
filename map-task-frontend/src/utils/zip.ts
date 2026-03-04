@@ -18,7 +18,7 @@ interface HRReading {
 }
 
 // Fallback: synthesize a final image from strokes if no final_image event exists.
-function strokesToDataUrl(strokes: { polyline: { x: number; y: number }[]; role?: string; mode?: string }[], size = 1024): string | null {
+function strokesToDataUrl(strokes: { polyline?: { x: number; y: number }[]; points?: { x: number; y: number }[]; role?: string; mode?: string }[], size = 1024): string | null {
   if (!strokes || strokes.length === 0) return null;
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -30,13 +30,14 @@ function strokesToDataUrl(strokes: { polyline: { x: number; y: number }[]; role?
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const s of strokes) {
-    if (!s.polyline || s.polyline.length < 2) continue;
+    const pts = s.polyline?.length ? s.polyline : (s.points ?? []);
+    if (!pts || pts.length < 2) continue;
     ctx.strokeStyle = '#ff0000';
     ctx.lineWidth = s.mode === 'erase' ? 20 : 3;
     ctx.beginPath();
-    ctx.moveTo(s.polyline[0].x, s.polyline[0].y);
-    for (let i = 1; i < s.polyline.length; i++) {
-      ctx.lineTo(s.polyline[i].x, s.polyline[i].y);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
     }
     ctx.stroke();
   }
@@ -96,7 +97,10 @@ export async function downloadSessionZip(options: {
     const modeTimeline = tevents.filter(e => e.type === 'mode_change').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw' }));
     const strokes = tevents
       .filter(e => e.type === 'draw_stroke' || e.type === 'draw_end')
-      .map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: e.payload?.polyline || [] }));
+      .map((e: any) => {
+        const pts = e.payload?.polyline?.length ? e.payload.polyline : (e.payload?.points ?? []);
+        return { t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: pts };
+      });
     const cursor = tevents.filter(e => e.type === 'pointer' && e.payload && typeof e.payload.x === 'number').map((e: any) => ({ t: e.t, role: e.role, x: e.payload.x, y: e.payload.y }));
     const final = tevents.slice().reverse().find((e: any) => e.type === 'final_image')?.payload?.dataUrl
       ?? strokesToDataUrl(strokes, 1024);
