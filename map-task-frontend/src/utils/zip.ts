@@ -130,7 +130,17 @@ export async function downloadSessionZip(options: {
   const trialSummaries: any[] = [];
   for (const ti of dataTrialIndices) {
     const tevents = trialMap.get(ti) || [];
-    const mapNumber = tevents.find((e: any) => typeof e?.payload?.mapNumber === 'number')?.payload?.mapNumber
+    // Use the latest matcher trial_final_time to decide mapNumber/window
+    const matcherFinalTimes = tevents
+      .filter(e => e.type === 'trial_final_time' && e.role === 'matcher')
+      .sort((a, b) => a.t - b.t);
+    const lastFinal = matcherFinalTimes[matcherFinalTimes.length - 1] || null;
+    const prevFinal = matcherFinalTimes.length > 1 ? matcherFinalTimes[matcherFinalTimes.length - 2] : null;
+    const tStart = prevFinal?.t ?? -Infinity;
+    const tEnd = lastFinal?.t ?? Infinity;
+
+    const mapNumber = lastFinal?.payload?.mapNumber
+      ?? tevents.find((e: any) => typeof e?.payload?.mapNumber === 'number')?.payload?.mapNumber
       ?? ((mapSet === 1 ? 0 : 8) + (ti - 1));
 
     const tlxDirector = tevents.filter(e => e.type === 'tlx_submit' && e.role === 'director').map(e => e.payload);
@@ -144,7 +154,9 @@ export async function downloadSessionZip(options: {
       .filter(e =>
         (e.type === 'draw_stroke' || e.type === 'draw_end') &&
         e.role === 'matcher' &&
-        (e.payload?.mapNumber === undefined || e.payload?.mapNumber === mapNumber)
+        e.payload?.mapNumber === mapNumber &&
+        e.t > tStart &&
+        e.t <= tEnd
       )
       .map((e: any) => {
         const pts = e.payload?.polyline?.length ? e.payload.polyline : (e.payload?.points ?? []);
