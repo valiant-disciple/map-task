@@ -19,7 +19,6 @@ import MicCheckWidget from '../components/MicCheckWidget';
 import type { EventRecord } from '../types';
 
 import { getMapSrc } from '../utils/mapAssets';
-import { watchService } from '../services/watchService';
 
 function rid(len = 8) { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; return Array.from({ length: len }, () => c[Math.floor(Math.random() * c.length)]).join(''); }
 function mapNumberFallback(mapSet: 1 | 2, trialIndex: number) { return (mapSet === 1 ? 0 : 8) + (trialIndex - 1); }

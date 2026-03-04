@@ -19,6 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/Ground%20Truth%20Maps', express.static(path.join(__dirname, '..', 'Ground Truth Maps')));
 
 // Accept raw ZIP upload and run the Python postprocess script (full RQA, ASR if key set)
 app.post('/api/process-zip', express.raw({ type: 'application/octet-stream', limit: '800mb' }), async (req, res) => {
@@ -49,7 +50,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
         if p.is_file():
             z.write(p, p.relative_to(root))
 `;
-    await runCmd('python', ['-c', zipScript, outDir, outZip]);
+    await runCmd(PYTHON_BIN, ['-c', zipScript, outDir, outZip]);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', 'attachment; filename="postprocess_output.zip"');
     fs.createReadStream(outZip).pipe(res);

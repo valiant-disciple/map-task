@@ -76,20 +76,22 @@ export default function MapViewer({ src, isInteractive = true, isErase = false, 
 
   // Handle Resize
   useEffect(() => {
+    const CANVAS_RES = 1024;
     const ob = new ResizeObserver(() => {
       if (containerRef.current && canvasRef.current) {
         const img = containerRef.current.querySelector('img');
         if (img) {
-          // Match canvas size to image exact size
-          canvasRef.current.width = img.clientWidth;
-          canvasRef.current.height = img.clientHeight;
+          canvasRef.current.width = CANVAS_RES;
+          canvasRef.current.height = CANVAS_RES;
+          canvasRef.current.style.width = `${img.clientWidth}px`;
+          canvasRef.current.style.height = `${img.clientHeight}px`;
           redraw();
         }
       }
     });
     if (containerRef.current) ob.observe(containerRef.current);
     return () => ob.disconnect();
-  }, [src]); // Re-observe if src (and thus image) changes
+  }, [src]);
 
 
   // Helper to get coordinates relative to canvas
@@ -180,12 +182,13 @@ export default function MapViewer({ src, isInteractive = true, isErase = false, 
         className="map-img"
         style={{ display: 'block', pointerEvents: 'none', userSelect: 'none', maxWidth: '100%' }}
         onLoad={() => {
-          // Trigger resize logic once image loads
           if (containerRef.current && canvasRef.current) {
             const img = containerRef.current.querySelector('img');
             if (img) {
-              canvasRef.current.width = img.clientWidth;
-              canvasRef.current.height = img.clientHeight;
+              canvasRef.current.width = 1024;
+              canvasRef.current.height = 1024;
+              canvasRef.current.style.width = `${img.clientWidth}px`;
+              canvasRef.current.style.height = `${img.clientHeight}px`;
               redraw();
             }
           }

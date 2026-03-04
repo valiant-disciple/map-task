@@ -96,8 +96,8 @@
 
     function canvasToLogical(e) {
       const rect = c.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / zoom;
-      const y = (e.clientY - rect.top) / zoom;
+      const x = ((e.clientX - rect.left) / rect.width) * c.width / zoom;
+      const y = ((e.clientY - rect.top) / rect.height) * c.height / zoom;
       return { x, y };
     }
 
@@ -189,7 +189,10 @@
     };
 
     document.getElementById('exportPngBtn').onclick = () => {
+      const prevZoom = zoom;
+      zoom = 1;
       redraw();
+      zoom = prevZoom;
       c.toBlob((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
@@ -197,6 +200,7 @@
         a.href = url; a.download = 'gt.png';
         document.body.appendChild(a); a.click();
         setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+        redraw();
       });
     };
 

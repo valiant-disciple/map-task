@@ -58,7 +58,6 @@ function cleanStrokes(raw: StrokeLike[], role: 'matcher' | 'director' | 'any' = 
 function strokesToDataUrl(strokes: StrokeLike[], size = 1024): string | null {
   const cleaned = cleanStrokes(strokes, 'matcher');
   if (!cleaned.length) return null;
-  if (!strokes || strokes.length === 0) return null;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
