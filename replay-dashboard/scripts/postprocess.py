@@ -450,8 +450,10 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             })
 
             for sidx, sraw in enumerate(strokes):
-                t_val = sraw.get("t", "")
+                stroke_t = sraw.get("t", "")
                 for pidx, p in enumerate(sraw.get("points", [])):
+                    pt_t = p.get("t", "") if isinstance(p, dict) else ""
+                    t_val = pt_t if pt_t else stroke_t
                     strokes_rows.append({
                         "sessionId": os.path.basename(zip_path),
                         "trial": trial_idx,
@@ -460,6 +462,7 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                         "pointIndex": pidx,
                         "t_unix_ms": t_val,
                         "t_iso": epoch_to_iso(t_val),
+                        "stroke_t_unix_ms": stroke_t,
                         "mode": sraw.get("mode", "draw"),
                         "x": p["x"],
                         "y": p["y"],
@@ -470,9 +473,8 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             hr_d = parse_hr_csv(hr_d_bytes.decode("utf-8"), "director", trial_idx) if hr_d_bytes else []
 
             def add_hr_rows(role_rows, rows, role):
-                baseline_bpms = [r["bpm"] for r in rows if str(r.get("phase", "")).lower() == "baseline" and isinstance(r.get("bpm"), (int, float, np.floating))]
-                baseline_mean = float(np.mean(baseline_bpms)) if baseline_bpms else zip_baseline.get(role)
-                baseline_n = len(baseline_bpms) if baseline_bpms else (1 if zip_baseline.get(role) is not None else 0)
+                baseline_mean = zip_baseline.get(role)
+                baseline_n = 1 if baseline_mean is not None else 0
                 for r in rows:
                     t_val = r.get("t", "")
                     role_rows.append({
@@ -521,10 +523,8 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             # Cross-recurrence (MDRQA) between matcher and director
             bpms_m = [r["bpm"] for r in hr_m if isinstance(r.get("bpm"), (int, float, np.floating))]
             bpms_d = [r["bpm"] for r in hr_d if isinstance(r.get("bpm"), (int, float, np.floating))]
-            bl_m = [r["bpm"] for r in hr_m if str(r.get("phase", "")).lower() == "baseline" and isinstance(r.get("bpm"), (int, float, np.floating))]
-            bl_d = [r["bpm"] for r in hr_d if str(r.get("phase", "")).lower() == "baseline" and isinstance(r.get("bpm"), (int, float, np.floating))]
-            base_m = float(np.mean(bl_m)) if bl_m else zip_baseline.get("matcher")
-            base_d = float(np.mean(bl_d)) if bl_d else zip_baseline.get("director")
+            base_m = zip_baseline.get("matcher")
+            base_d = zip_baseline.get("director")
             crqa = crqa_features(bpms_m, bpms_d, baseline_m=base_m, baseline_d=base_d)
             if crqa:
                 crqa_row = {"sessionId": os.path.basename(zip_path), "trial": trial_idx, "role": "cross"}
@@ -585,17 +585,65 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                             "error": str(e)[:200]
                         })
 
+            # Extract trial-level metadata from events
+            trial_start_t = ""
+            trial_end_t = ""
+            target_reached = ""
+            path_confidence = ""
+            director_note = ""
+            tlx_director = {}
+            tlx_matcher = {}
+            for e in events:
+                etype = e.get("type", "")
+                if etype == "trial_final_time":
+                    t_val = e.get("t", "")
+                    if not trial_end_t or (t_val and t_val > trial_end_t):
+                        trial_end_t = t_val
+                if etype == "draw_stroke" and not trial_start_t:
+                    trial_start_t = e.get("t", "")
+                if etype == "trial_success":
+                    p = e.get("payload", {})
+                    target_reached = p.get("targetReached", "")
+                    path_confidence = p.get("pathConfidence", "")
+                    director_note = p.get("note", "")
+                if etype == "tlx_submit":
+                    role = e.get("role", "")
+                    p = e.get("payload", {})
+                    if role == "director":
+                        tlx_director = p
+                    elif role == "matcher":
+                        tlx_matcher = p
+
             manifest_rows.append({
                 "sessionId": os.path.basename(zip_path),
                 "trial": trial_idx,
                 "mapNumber": map_number,
+                "trial_start_ms": trial_start_t,
+                "trial_start_iso": epoch_to_iso(trial_start_t),
+                "trial_end_ms": trial_end_t,
+                "trial_end_iso": epoch_to_iso(trial_end_t),
                 "strokes": len(strokes),
                 "strokePoints": sum(len(s.get("points", [])) for s in strokes),
                 "hr_matcher": len(hr_m),
                 "hr_director": len(hr_d),
                 "audio_count": len([r for r in audio_rows if r["trial"] == trial_idx]),
                 "coverage_gt": coverage_gt,
-                "coverage_pred": coverage_pred
+                "coverage_pred": coverage_pred,
+                "target_reached": target_reached,
+                "path_confidence": path_confidence,
+                "director_note": director_note,
+                "tlx_mental_d": tlx_director.get("mental", ""),
+                "tlx_physical_d": tlx_director.get("physical", ""),
+                "tlx_temporal_d": tlx_director.get("temporal", ""),
+                "tlx_performance_d": tlx_director.get("performance", ""),
+                "tlx_effort_d": tlx_director.get("effort", ""),
+                "tlx_frustration_d": tlx_director.get("frustration", ""),
+                "tlx_mental_m": tlx_matcher.get("mental", ""),
+                "tlx_physical_m": tlx_matcher.get("physical", ""),
+                "tlx_temporal_m": tlx_matcher.get("temporal", ""),
+                "tlx_performance_m": tlx_matcher.get("performance", ""),
+                "tlx_effort_m": tlx_matcher.get("effort", ""),
+                "tlx_frustration_m": tlx_matcher.get("frustration", ""),
             })
 
             # Time-series correctness per stroke

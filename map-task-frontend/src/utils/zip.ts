@@ -148,7 +148,7 @@ export async function downloadSessionZip(options: {
     const psmmDirector = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'director').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
     const psmmMatcher = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'matcher').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
 
-    const modeTimeline = tevents.filter(e => e.type === 'mode_change').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw' }));
+    const modeTimeline = tevents.filter(e => e.type === 'mode_change' || e.type === 'action_toggle_mode').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || (e.payload?.isErase ? 'erase' : 'draw') }));
     const rawStrokes = tevents
       .filter(e =>
         (e.type === 'draw_stroke' || e.type === 'draw_end') &&
