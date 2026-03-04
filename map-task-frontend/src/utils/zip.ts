@@ -25,6 +25,16 @@ function dist2(a: { x: number; y: number }, b: { x: number; y: number }) {
   return dx * dx + dy * dy;
 }
 
+function pathLength(pts: { x: number; y: number }[]): number {
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i].x - pts[i - 1].x;
+    const dy = pts[i].y - pts[i - 1].y;
+    len += Math.hypot(dx, dy);
+  }
+  return len;
+}
+
 function cleanStrokes(raw: StrokeLike[], role: 'matcher' | 'director' | 'any' = 'matcher') {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -38,8 +48,10 @@ function cleanStrokes(raw: StrokeLike[], role: 'matcher' | 'director' | 'any' = 
       if (role !== 'any' && s.role && s.role !== role) return false;
       if (s.mode !== 'draw' && s.mode !== 'erase') return false;
       if (!s.points || s.points.length < 2) return false;
-      // Require some movement to avoid cursor blips
-      return dist2(s.points[0], s.points[s.points.length - 1]) > 1;
+      // Require meaningful movement to avoid cursor blips
+      const endDistOk = dist2(s.points[0], s.points[s.points.length - 1]) > 1;
+      const lenOk = pathLength(s.points) > 6; // ~>= 6px total path
+      return endDistOk && lenOk;
     });
 }
 
