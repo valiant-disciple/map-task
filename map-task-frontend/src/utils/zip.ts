@@ -242,6 +242,9 @@ export async function downloadSessionZip(options: {
 
   zip.file('session/session.json', JSON.stringify(sessionJson, null, 2));
   zip.file('session/events.json', JSON.stringify(events, null, 2));
+  if (baselineHR && (baselineHR.director != null || baselineHR.matcher != null)) {
+    zip.file('session/hr_baseline.json', JSON.stringify(baselineHR, null, 2));
+  }
 
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
