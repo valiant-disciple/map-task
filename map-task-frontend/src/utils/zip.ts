@@ -18,7 +18,34 @@ interface HRReading {
 }
 
 // Fallback: synthesize a final image from strokes if no final_image event exists.
-function strokesToDataUrl(strokes: { polyline?: { x: number; y: number }[]; points?: { x: number; y: number }[]; role?: string; mode?: string }[], size = 1024): string | null {
+type StrokeLike = { polyline?: { x: number; y: number }[]; points?: { x: number; y: number }[]; role?: string; mode?: string };
+
+function dist2(a: { x: number; y: number }, b: { x: number; y: number }) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function cleanStrokes(raw: StrokeLike[], role: 'matcher' | 'director' | 'any' = 'matcher') {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(s => {
+      const pts = s.polyline?.length ? s.polyline : (s.points ?? []);
+      const normPts = Array.isArray(pts) ? pts.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => ({ x: +p.x, y: +p.y })) : [];
+      const mode = s.mode || 'draw';
+      return { ...s, mode, points: normPts, polyline: normPts };
+    })
+    .filter(s => {
+      if (role !== 'any' && s.role && s.role !== role) return false;
+      if (s.mode !== 'draw' && s.mode !== 'erase') return false;
+      if (!s.points || s.points.length < 2) return false;
+      // Require some movement to avoid cursor blips
+      return dist2(s.points[0], s.points[s.points.length - 1]) > 1;
+    });
+}
+
+function strokesToDataUrl(strokes: StrokeLike[], size = 1024): string | null {
+  const cleaned = cleanStrokes(strokes, 'matcher');
+  if (!cleaned.length) return null;
   if (!strokes || strokes.length === 0) return null;
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -29,11 +56,9 @@ function strokesToDataUrl(strokes: { polyline?: { x: number; y: number }[]; poin
   ctx.fillRect(0, 0, size, size);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const s of strokes) {
+  for (const s of cleaned) {
     const mode = s.mode || 'draw';
-    if (mode !== 'draw' && mode !== 'erase') continue; // ignore pointer/non-draw
-    const pts = s.polyline?.length ? s.polyline : (s.points ?? []);
-    if (!pts || pts.length < 2) continue;
+    const pts = s.points || s.polyline || [];
     const isErase = mode === 'erase';
     ctx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over';
     ctx.strokeStyle = '#ff0000';
@@ -103,12 +128,13 @@ export async function downloadSessionZip(options: {
     const psmmMatcher = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'matcher').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
 
     const modeTimeline = tevents.filter(e => e.type === 'mode_change').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw' }));
-    const strokes = tevents
+    const rawStrokes = tevents
       .filter(e => (e.type === 'draw_stroke' || e.type === 'draw_end') && e.role === 'matcher')
       .map((e: any) => {
         const pts = e.payload?.polyline?.length ? e.payload.polyline : (e.payload?.points ?? []);
         return { t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: pts };
       });
+    const strokes = cleanStrokes(rawStrokes, 'matcher');
     const cursor = tevents.filter(e => e.type === 'pointer' && e.payload && typeof e.payload.x === 'number').map((e: any) => ({ t: e.t, role: e.role, x: e.payload.x, y: e.payload.y }));
     const final = tevents.slice().reverse().find((e: any) => e.type === 'final_image')?.payload?.dataUrl
       ?? strokesToDataUrl(strokes, 1024);
