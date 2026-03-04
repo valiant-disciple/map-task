@@ -1,0 +1,1133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Map Scoring Checker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #222; }
+    #controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+    button { padding: 6px 10px; border: none; border-radius: 4px; background: #0b5; color: #fff; cursor: pointer; }
+    .panel { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
+    pre { background: #f7f7f7; padding: 8px; border-radius: 6px; overflow-x: auto; }
+    canvas { background: #fff; border: 1px solid #ccc; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+  <h2>Map Scoring Checker</h2>
+  <p>Upload a Director GT JSON (with strokes.points x/y) and a Matcher JSON to compute accuracy metrics. Strokes are preferred; final image is used only if strokes are absent.</p>
+
+  <div id="controls">
+    <label>Director GT JSON: <input type="file" id="gtInput" accept=".json" /></label>
+    <label>Matcher JSON: <input type="file" id="matcherInput" accept=".json" /></label>
+    <button id="scoreBtn" disabled>Compute</button>
+  </div>
+
+  <div class="panel">
+    <div id="metrics"></div>
+    <pre id="details"></pre>
+  </div>
+
+  <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:12px;">
+    <div>
+      <div>GT Mask</div>
+      <canvas id="gtCanvas"></canvas>
+    </div>
+    <div>
+      <div>Matcher Mask</div>
+      <canvas id="matcherCanvas"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const gtInput = document.getElementById('gtInput');
+    const matcherInput = document.getElementById('matcherInput');
+    const scoreBtn = document.getElementById('scoreBtn');
+    const metricsEl = document.getElementById('metrics');
+    const detailsEl = document.getElementById('details');
+    const gtCanvas = document.getElementById('gtCanvas');
+    const matcherCanvas = document.getElementById('matcherCanvas');
+    const gtCtx = gtCanvas.getContext('2d');
+    const matcherCtx = matcherCanvas.getContext('2d');
+
+    let gtData = null;
+    let matcherData = null;
+
+    function cleanStrokes(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw.map(s => {
+        const mode = s?.mode || 'draw';
+        const role = s?.role;
+        const pts = s?.polyline || s?.points || [];
+        const normPts = Array.isArray(pts)
+          ? pts.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => ({ x: +p.x, y: +p.y }))
+          : [];
+        return { ...s, mode, role, points: normPts, polyline: normPts };
+      }).filter(s => {
+        const drawable = (s.mode === 'draw' || s.mode === 'erase') && s.points?.length >= 2;
+        const roleOk = !s.role || s.role === 'matcher';
+        return drawable && roleOk;
+      });
+    }
+
+    function normalizeInput(data) {
+      // If data is an array of strokes (polyline/points), wrap it
+      if (Array.isArray(data)) {
+        const first = data[0] || {};
+        if (first.polyline || first.points) {
+          return { strokes: cleanStrokes(data) };
+        }
+        // If this is an events array, extract strokes and final image
+        if (data.some(e => e?.type === 'draw_stroke')) {
+          const strokes = cleanStrokes(data
+            .filter(e => e?.type === 'draw_stroke')
+            .map(e => {
+              const payload = e?.payload || {};
+              return {
+                ...payload,
+                polyline: payload.polyline || payload.points || [],
+                mode: payload.mode || 'draw'
+              };
+            }));
+          const finalImageDataUrl = data.slice().reverse().find(e => e?.type === 'final_image')?.payload?.dataUrl || null;
+          return { strokes, finalImageDataUrl };
+        }
+      }
+      return data;
+    }
+
+    function parseJsonFile(file, cb) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { cb(normalizeInput(JSON.parse(reader.result))); }
+        catch (e) { alert('Invalid JSON: ' + e.message); }
+      };
+      reader.readAsText(file);
+    }
+
+    function updateButton() {
+      scoreBtn.disabled = !(gtData && matcherData);
+    }
+
+    gtInput.addEventListener('change', e => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      parseJsonFile(f, json => { gtData = json; updateButton(); });
+    });
+
+    matcherInput.addEventListener('change', e => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      parseJsonFile(f, json => { matcherData = json; updateButton(); });
+    });
+
+    function isDrawableStroke(stroke) {
+      const mode = stroke?.mode;
+      if (mode && mode !== 'draw' && mode !== 'erase') return false; // ignore pointer/other modes
+      const pts = stroke.points || stroke.polyline || [];
+      return Array.isArray(pts) && pts.length >= 2;
+    }
+
+    function strokeToPath(ctx, stroke) {
+      const pts = stroke.points || stroke.polyline || [];
+      if (!pts || pts.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+    }
+
+    function makeMaskFromStrokes(data, width, height) {
+      const c = document.createElement('canvas');
+      c.width = width; c.height = height;
+      const cx = c.getContext('2d');
+      cx.fillStyle = '#fff';
+      cx.fillRect(0, 0, width, height);
+      cx.lineCap = 'round'; cx.lineJoin = 'round';
+      (data.strokes || []).filter(isDrawableStroke).forEach(s => {
+        const isErase = s.mode === 'erase';
+        cx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over';
+        cx.strokeStyle = '#000';
+        cx.lineWidth = isErase ? (s.width || 20) : (s.width || 3);
+        strokeToPath(cx, s);
+      });
+      cx.globalCompositeOperation = 'source-over';
+      const imgData = cx.getImageData(0, 0, width, height);
+      const mask = new Uint8ClampedArray(width * height);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        const v = imgData.data[i]; // R
+        mask[i / 4] = v < 250 ? 255 : 0;
+      }
+      return { mask, canvas: c };
+    }
+
+    function makeMaskFromFinalImage(data, width, height) {
+      if (!data.finalImageDataUrl) return null;
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = width; c.height = height;
+          const cx = c.getContext('2d');
+          cx.drawImage(img, 0, 0, width, height);
+          const imgData = cx.getImageData(0, 0, width, height);
+          const mask = new Uint8ClampedArray(width * height);
+          for (let i = 0; i < imgData.data.length; i += 4) {
+            const v = imgData.data[i];
+            mask[i / 4] = v < 250 ? 255 : 0;
+          }
+          resolve({ mask, canvas: c });
+        };
+        img.onerror = () => resolve(null);
+        img.src = data.finalImageDataUrl;
+      });
+    }
+
+    function loadImageDims(dataUrl) {
+      if (!dataUrl) return null;
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => resolve(null);
+        img.src = dataUrl;
+      });
+    }
+
+    function bboxFromStrokes(strokes) {
+      if (!strokes || strokes.length === 0) return null;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      strokes.forEach(s => {
+        (s.points || s.polyline || []).forEach(p => {
+          if (typeof p.x === 'number' && typeof p.y === 'number') {
+            minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+          }
+        });
+      });
+      if (!Number.isFinite(minX)) return null;
+      return { width: Math.ceil(maxX - minX + 1), height: Math.ceil(maxY - minY + 1) };
+    }
+
+    async function resolveDims(gtData, matcherData) {
+      // Prefer explicit image dims
+      if (gtData?.image?.width && gtData?.image?.height) {
+        return { width: gtData.image.width, height: gtData.image.height, source: 'gt.image' };
+      }
+      if (matcherData?.image?.width && matcherData?.image?.height) {
+        return { width: matcherData.image.width, height: matcherData.image.height, source: 'matcher.image' };
+      }
+
+      // Try final images
+      const gtImg = await loadImageDims(gtData?.finalImageDataUrl);
+      if (gtImg) return { ...gtImg, source: 'gt.final' };
+      const matcherImg = await loadImageDims(matcherData?.finalImageDataUrl);
+      if (matcherImg) return { ...matcherImg, source: 'matcher.final' };
+
+      // Try stroke bounding box
+      const strokeBox = bboxFromStrokes(gtData?.strokes || matcherData?.strokes || []);
+      if (strokeBox) return { ...strokeBox, source: 'stroke_bbox' };
+
+      // Fallback
+      return { width: 1024, height: 1024, source: 'fallback_1024' };
+    }
+
+    function binaryMetrics(gtMask, predMask) {
+      const n = gtMask.length;
+      let tp = 0, fp = 0, fn = 0;
+      for (let i = 0; i < n; i++) {
+        const g = gtMask[i] > 0;
+        const p = predMask[i] > 0;
+        if (p && g) tp++;
+        else if (p && !g) fp++;
+        else if (!p && g) fn++;
+      }
+      const denomIou = tp + fp + fn;
+      const iou = denomIou > 0 ? tp / denomIou : 0;
+      const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+      const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+      const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+      const dice = f1;
+      return { iou, precision, recall, f1, dice };
+    }
+
+    function ssim(gt, pred) {
+      const n = gt.length;
+      let muX = 0, muY = 0;
+      for (let i = 0; i < n; i++) { muX += gt[i]; muY += pred[i]; }
+      muX /= n; muY /= n;
+      let varX = 0, varY = 0, cov = 0;
+      for (let i = 0; i < n; i++) {
+        const dx = gt[i] - muX;
+        const dy = pred[i] - muY;
+        varX += dx * dx;
+        varY += dy * dy;
+        cov += dx * dy;
+      }
+      varX /= n; varY /= n; cov /= n;
+      const C1 = 6.5025, C2 = 58.5225;
+      return ((2 * muX * muY + C1) * (2 * cov + C2)) / ((muX * muX + muY * muY + C1) * (varX + varY + C2));
+    }
+
+    function hausdorff(gt, pred, width, height) {
+      const coords = buf => {
+        const out = [];
+        for (let i = 0; i < buf.length; i++) {
+          if (buf[i] > 0) {
+            const y = Math.floor(i / width);
+            const x = i - y * width;
+            out.push([x, y]);
+          }
+        }
+        return out;
+      };
+      const A = coords(gt), B = coords(pred);
+      if (!A.length || !B.length) return 0;
+      const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+      const directed = (P, Q) => {
+        let maxMin = 0;
+        for (const p of P) {
+          let min = Infinity;
+          for (const q of Q) {
+            const d = dist(p, q);
+            if (d < min) min = d;
+            if (min === 0) break;
+          }
+          if (min > maxMin) maxMin = min;
+        }
+        return maxMin;
+      };
+      return Math.max(directed(A, B), directed(B, A));
+    }
+
+    // Euclidean distance transform (squared distances) for foreground>0
+    function distanceTransform(mask, width, height) {
+      const INF = 1e12;
+      const dist = new Float32Array(mask.length);
+      for (let i = 0; i < mask.length; i++) dist[i] = mask[i] > 0 ? 0 : INF;
+
+      // First pass (top-left to bottom-right)
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = y * width + x;
+          const d = dist[i];
+          if (x > 0) dist[i] = Math.min(dist[i], dist[i - 1] + 1);
+          if (y > 0) dist[i] = Math.min(dist[i], dist[i - width] + 1);
+          if (x > 0 && y > 0) dist[i] = Math.min(dist[i], dist[i - width - 1] + 1.4142);
+          if (x + 1 < width && y > 0) dist[i] = Math.min(dist[i], dist[i - width + 1] + 1.4142);
+        }
+      }
+      // Second pass (bottom-right to top-left)
+      for (let y = height - 1; y >= 0; y--) {
+        for (let x = width - 1; x >= 0; x--) {
+          const i = y * width + x;
+          if (x + 1 < width) dist[i] = Math.min(dist[i], dist[i + 1] + 1);
+          if (y + 1 < height) dist[i] = Math.min(dist[i], dist[i + width] + 1);
+          if (x + 1 < width && y + 1 < height) dist[i] = Math.min(dist[i], dist[i + width + 1] + 1.4142);
+          if (x > 0 && y + 1 < height) dist[i] = Math.min(dist[i], dist[i + width - 1] + 1.4142);
+        }
+      }
+      return dist;
+    }
+
+    function chamfer(gtMask, predMask, width, height) {
+      const dtGt = distanceTransform(gtMask, width, height);
+      const dtPred = distanceTransform(predMask, width, height);
+      let sumA = 0, cntA = 0, sumB = 0, cntB = 0;
+      for (let i = 0; i < predMask.length; i++) {
+        if (predMask[i] > 0) { sumA += dtGt[i]; cntA++; }
+        if (gtMask[i] > 0) { sumB += dtPred[i]; cntB++; }
+      }
+      const meanA = cntA ? Math.sqrt(sumA / cntA) : 0;
+      const meanB = cntB ? Math.sqrt(sumB / cntB) : 0;
+      return (meanA + meanB) / 2;
+    }
+
+    function buildBoundary(mask, width, height) {
+      const out = new Uint8Array(mask.length);
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = y * width + x;
+          if (!mask[i]) continue;
+          let isBoundary = false;
+          for (const [dx, dy] of dirs) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) { isBoundary = true; break; }
+            if (!mask[ny * width + nx]) { isBoundary = true; break; }
+          }
+          if (isBoundary) out[i] = 1;
+        }
+      }
+      return out;
+    }
+
+    function boundaryF(gtMask, predMask, width, height, tol = 2) {
+      const gtB = buildBoundary(gtMask, width, height);
+      const predB = buildBoundary(predMask, width, height);
+      const dtGt = distanceTransform(gtB, width, height);
+      const dtPred = distanceTransform(predB, width, height);
+
+      let tpP = 0, totP = 0, tpR = 0, totR = 0;
+      for (let i = 0; i < predB.length; i++) {
+        if (predB[i]) { totP++; if (dtGt[i] <= tol) tpP++; }
+        if (gtB[i])   { totR++; if (dtPred[i] <= tol) tpR++; }
+      }
+      const precision = totP ? tpP / totP : 0;
+      const recall = totR ? tpR / totR : 0;
+      const f1 = (precision + recall) ? (2 * precision * recall) / (precision + recall) : 0;
+      return { precision, recall, f1 };
+    }
+
+    // --- HRV + RQA (lightweight JS version for dashboard) ---
+    function computeHrvRqa(samples, baselineMean = null) {
+      const bpms = samples.filter(v => Number.isFinite(v));
+      if (!bpms.length) return {};
+      const centered = baselineMean != null ? bpms.map(b => b - baselineMean) : bpms.slice();
+      const mean = centered.reduce((a, v) => a + v, 0) / centered.length;
+      const std = Math.sqrt(centered.reduce((a, v) => a + Math.pow(v - mean, 2), 0) / centered.length);
+      const diff = [];
+      for (let i = 1; i < centered.length; i++) diff.push(centered[i] - centered[i - 1]);
+      const rmssd = diff.length ? Math.sqrt(diff.reduce((a, v) => a + v * v, 0) / diff.length) : 0;
+      const pnn50 = diff.length ? diff.filter(v => Math.abs(v) > 50).length / diff.length : 0;
+
+      const rqa = { rqa_rr: '', rqa_det: '', rqa_lam: '', rqa_entr: '' };
+      if (centered.length >= 3 && std > 0) {
+        const n = centered.length;
+        const threshold = 0.1 * std;
+        // Recurrence matrix
+        const R = Array.from({ length: n }, () => new Uint8Array(n));
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            const d = Math.abs(centered[i] - centered[j]);
+            R[i][j] = d <= threshold ? 1 : 0;
+          }
+        }
+        const total = n * n;
+        let recPts = 0;
+        const diagLens = [];
+        const vertLens = [];
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            if (R[i][j]) recPts++;
+            // diagonal lines length>=2
+            if (R[i][j] && (i === 0 || j === 0 || !R[i - 1][j - 1])) {
+              let len = 0, ii = i, jj = j;
+              while (ii < n && jj < n && R[ii][jj]) { len++; ii++; jj++; }
+              if (len >= 2) diagLens.push(len);
+            }
+            // vertical lines length>=2
+            if (R[i][j] && (i === 0 || !R[i - 1][j])) {
+              let len = 0, ii = i;
+              while (ii < n && R[ii][j]) { len++; ii++; }
+              if (len >= 2) vertLens.push(len);
+            }
+          }
+        }
+        const recRate = recPts / total;
+        const detPts = diagLens.reduce((a, v) => a + v, 0);
+        const lamPts = vertLens.reduce((a, v) => a + v, 0);
+        const diagPts = diagLens.reduce((a, v) => a + v, 0);
+        const det = recPts ? detPts / recPts : 0;
+        const lam = recPts ? lamPts / recPts : 0;
+        let entr = 0;
+        if (diagLens.length) {
+          const counts = {};
+          diagLens.forEach(l => { counts[l] = (counts[l] || 0) + 1; });
+          const tot = diagLens.length;
+          Object.values(counts).forEach(c => {
+            const p = c / tot;
+            entr -= p * Math.log(p);
+          });
+        }
+        rqa.rqa_rr = recRate;
+        rqa.rqa_det = det;
+        rqa.rqa_lam = lam;
+        rqa.rqa_entr = entr;
+      }
+      return { rmssd, pnn50, ...rqa, baseline_mean: baselineMean ?? '' };
+    }
+
+    async function compute() {
+      if (!gtData) { alert('Missing GT'); return; }
+      if (!matcherData) { alert('Missing matcher'); return; }
+
+      const { width, height, source } = await resolveDims(gtData, matcherData);
+      console.log('[score] dims', { width, height, source });
+
+      // GT: prefer strokes; fallback to final image
+      let gtMaskRes;
+      if (gtData.strokes && gtData.strokes.length > 0) {
+        gtMaskRes = makeMaskFromStrokes(gtData, width, height);
+      } else if (gtData.finalImageDataUrl) {
+        gtMaskRes = await makeMaskFromFinalImage(gtData, width, height);
+      }
+      if (!gtMaskRes) {
+        gtMaskRes = { mask: new Uint8ClampedArray(width * height), canvas: null };
+      }
+
+      // Matcher: prefer strokes; fallback to final image if no strokes
+      let matcherMaskRes;
+      if (matcherData.strokes && matcherData.strokes.length > 0) {
+        matcherMaskRes = makeMaskFromStrokes(matcherData, width, height);
+      } else if (matcherData.finalImageDataUrl) {
+        matcherMaskRes = await makeMaskFromFinalImage(matcherData, width, height);
+      }
+      if (!matcherMaskRes) {
+        matcherMaskRes = { mask: new Uint8ClampedArray(width * height), canvas: null };
+      }
+
+      const gtMask = gtMaskRes.mask;
+      const matcherMask = matcherMaskRes.mask;
+      const m = binaryMetrics(gtMask, matcherMask);
+      const s = ssim(gtMask, matcherMask);
+      const h = hausdorff(gtMask, matcherMask, width, height);
+      const cd = chamfer(gtMask, matcherMask, width, height);
+      const bf = boundaryF(gtMask, matcherMask, width, height, 2);
+      const coverageGt = gtMask.reduce((a, v) => a + (v > 0 ? 1 : 0), 0) / (width * height);
+      const coveragePred = matcherMask.reduce((a, v) => a + (v > 0 ? 1 : 0), 0) / (width * height);
+
+      metricsEl.innerHTML = [
+        `IoU: ${m.iou.toFixed(3)}`,
+        `F1: ${m.f1.toFixed(3)}`,
+        `Dice: ${m.dice.toFixed(3)}`,
+        `P: ${m.precision.toFixed(3)}`,
+        `R: ${m.recall.toFixed(3)}`,
+        `SSIM: ${s.toFixed(3)}`,
+        `HD: ${h.toFixed(2)}`,
+        `Chamfer: ${cd.toFixed(2)}`,
+        `BF1@2px: ${bf.f1.toFixed(3)}`
+      ].join(' | ');
+
+      detailsEl.textContent = JSON.stringify({
+        metrics: m,
+        ssim: s,
+        hausdorff: h,
+        chamfer: cd,
+        boundaryF: bf,
+        coverage: { gt: coverageGt, pred: coveragePred }
+      }, null, 2);
+
+      // Draw masks
+      gtCanvas.width = matcherCanvas.width = width;
+      gtCanvas.height = matcherCanvas.height = height;
+      const drawMask = (ctx, mask) => {
+        const imgData = ctx.createImageData(width, height);
+        for (let i = 0; i < mask.length; i++) {
+          const v = mask[i];
+          imgData.data[i * 4 + 0] = 255;
+          imgData.data[i * 4 + 1] = 0;
+          imgData.data[i * 4 + 2] = 0;
+          imgData.data[i * 4 + 3] = v ? 200 : 0;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      };
+      drawMask(gtCtx, gtMask);
+      drawMask(matcherCtx, matcherMask);
+    }
+
+    scoreBtn.addEventListener('click', () => compute());
+
+    // ---------- Dataset export from session ZIP ----------
+    // UI
+    const zipPanel = document.createElement('div');
+    zipPanel.className = 'panel';
+    zipPanel.innerHTML = '<h3>Dataset Export & Replay (ZIP → CSV + playback)</h3><p>Upload a session ZIP (from matcher) to extract metrics, strokes, HR (with baseline/RQA), audio manifest, and enable stroke/HR replay. GT maps are loaded from /Ground Truth Maps/gt_*.json.</p>';
+    const zipInput = document.createElement('input');
+    zipInput.type = 'file';
+    zipInput.accept = '.zip';
+    const zipBtn = document.createElement('button');
+    zipBtn.textContent = 'Process ZIP';
+    zipBtn.disabled = true;
+    const zipStatus = document.createElement('div');
+    zipStatus.style.marginTop = '8px';
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.gap = '10px';
+    row.style.alignItems = 'center';
+    row.append('Session ZIP: ', zipInput, zipBtn);
+    zipPanel.appendChild(row);
+    zipPanel.appendChild(zipStatus);
+
+    // Replay UI
+    const replayPanel = document.createElement('div');
+    replayPanel.className = 'panel';
+    replayPanel.innerHTML = '<h3>Replay</h3>';
+    const trialSelect = document.createElement('select');
+    const playBtn = document.createElement('button');
+    playBtn.textContent = 'Play';
+    playBtn.disabled = true;
+    const pauseBtn = document.createElement('button');
+    pauseBtn.textContent = 'Pause';
+    pauseBtn.disabled = true;
+    const replayStatus = document.createElement('div');
+    replayStatus.style.marginTop = '8px';
+    const replayCanvas = document.createElement('canvas');
+    replayCanvas.width = 512; replayCanvas.height = 512;
+    replayCanvas.style.border = '1px solid #ccc';
+    const hrCanvas = document.createElement('canvas');
+    hrCanvas.width = 512; hrCanvas.height = 160;
+    hrCanvas.style.border = '1px solid #ccc';
+    const statsPre = document.createElement('pre');
+    statsPre.style.maxHeight = '200px';
+    statsPre.style.overflow = 'auto';
+    const transcriptsPre = document.createElement('pre');
+    transcriptsPre.style.maxHeight = '200px';
+    transcriptsPre.style.overflow = 'auto';
+    transcriptsPre.style.marginTop = '8px';
+    transcriptsPre.textContent = 'Transcripts: (load a ZIP with speech.csv)';
+
+    const replayControls = document.createElement('div');
+    replayControls.style.display = 'flex';
+    replayControls.style.gap = '8px';
+    replayControls.style.alignItems = 'center';
+    replayControls.append('Trial:', trialSelect, playBtn, pauseBtn);
+
+    const replayLayout = document.createElement('div');
+    replayLayout.style.display = 'flex';
+    replayLayout.style.gap = '12px';
+    replayLayout.style.flexWrap = 'wrap';
+    const col1 = document.createElement('div');
+    col1.append('Strokes', replayCanvas);
+    const col2 = document.createElement('div');
+    col2.append('HR', hrCanvas);
+    replayLayout.append(col1, col2);
+    replayPanel.append(replayControls, replayStatus, replayLayout, statsPre, transcriptsPre);
+
+    zipPanel.appendChild(replayPanel);
+    document.body.appendChild(zipPanel);
+
+    zipInput.addEventListener('change', () => {
+      zipBtn.disabled = !(zipInput.files && zipInput.files[0]);
+    });
+
+    // Replay state
+    const replayState = {
+      trials: [], // {id, strokes, hrM, hrD, speech, duration, width, height}
+      current: null,
+      timer: null,
+      playing: false,
+      startTs: 0,
+      playhead: 0,
+      procStats: new Map(), // key: `${trial}-${role}` -> stats row from hr_stats.csv
+      procSpeech: null
+    };
+
+    async function fetchGt(mapNumber) {
+      const url = `/Ground%20Truth%20Maps/gt_${mapNumber}.json`;
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`GT ${mapNumber} fetch failed: ${resp.status}`);
+        return resp.json();
+      } catch (e) {
+        console.warn('GT fetch failed', mapNumber, e);
+        return null;
+      }
+    }
+
+    function strokesToMask(strokes, width, height) {
+      const c = document.createElement('canvas');
+      c.width = width; c.height = height;
+      const cx = c.getContext('2d');
+      cx.fillStyle = '#fff';
+      cx.fillRect(0, 0, width, height);
+      cx.lineCap = 'round'; cx.lineJoin = 'round';
+      (strokes.strokes || []).filter(isDrawableStroke).forEach(s => {
+        const isErase = s.mode === 'erase';
+        cx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over';
+        cx.strokeStyle = '#000';
+        cx.lineWidth = isErase ? (s.width || 20) : (s.width || 3);
+        strokeToPath(cx, s);
+      });
+      cx.globalCompositeOperation = 'source-over';
+      const imgData = cx.getImageData(0, 0, width, height);
+      const mask = new Uint8ClampedArray(width * height);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        mask[i / 4] = imgData.data[i] < 250 ? 255 : 0;
+      }
+      return mask;
+    }
+
+    function csvEscape(v) {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }
+    function toCSV(rows) {
+      if (!rows.length) return '';
+      const headers = Object.keys(rows[0]);
+      const lines = [headers.join(',')];
+      rows.forEach(r => lines.push(headers.map(h => csvEscape(r[h])).join(',')));
+      return lines.join('\n');
+    }
+    function parseCSV(text) {
+      const lines = text.trim().split(/\r?\n/);
+      if (!lines.length) return [];
+      const headers = lines[0].split(',');
+      return lines.slice(1).map(l => {
+        const cols = l.split(',');
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = cols[i] ?? '');
+        return obj;
+      });
+    }
+
+    async function processZip(file) {
+      zipStatus.textContent = 'Reading ZIP...';
+      const zip = await JSZip.loadAsync(file);
+      const trialDirs = new Set();
+      zip.forEach((relPath) => {
+        const m = relPath.match(/^trials\/(T\d{2})\//);
+        if (m) trialDirs.add(m[1]);
+      });
+
+      // Collect rows per modality; we will package into one ZIP at the end.
+      const metricsRows = [];
+      const tsRows = [];
+      const strokesRows = [];
+      const hrMatcherRows = [];
+      const hrDirectorRows = [];
+      const hrStatsRows = []; // HRV + RQA-lite
+      const audioRows = [];
+      const prosodyRows = [];
+      const speechRows = [];
+      const manifestRows = [];
+      const gtCache = new Map();
+      let baselineHR = null;
+
+      const readText = async (p) => {
+        const f = zip.file(p);
+        return f ? f.async('string') : null;
+      };
+
+      // Optional baseline means from session
+      const baselineText = await readText('session/hr_baseline.json');
+      if (baselineText) {
+        try { baselineHR = JSON.parse(baselineText); } catch {}
+      }
+
+      replayState.trials = [];
+
+      for (const tdir of Array.from(trialDirs).sort()) {
+        const trialIdx = Number(tdir.replace('T', ''));
+        const eventsText = await readText(`trials/${tdir}/events.json`);
+        const strokesText = await readText(`trials/${tdir}/strokes.json`);
+        const hrMatcher = await readText(`trials/${tdir}/hr/hr_matcher.csv`);
+        const hrDirector = await readText(`trials/${tdir}/hr/hr_director.csv`);
+
+        let mapNumber = null;
+        let strokes = [];
+        if (eventsText) {
+          try {
+            const ev = JSON.parse(eventsText);
+            const lastMapEvt = ev.slice().reverse().find(e => typeof e?.payload?.mapNumber === 'number');
+            mapNumber = lastMapEvt?.payload?.mapNumber ?? null;
+            ev.filter(e => e.type === 'draw_stroke' && e.role === 'matcher' && (mapNumber === null || e.payload?.mapNumber === mapNumber))
+              .forEach((e, idx) => {
+                const pts = e.payload?.polyline?.length ? e.payload.polyline : (e.payload?.points ?? []);
+                strokes.push({ ...e.payload, points: pts, mode: e.payload?.mode || 'draw', t: e.t, strokeIndex: idx });
+              });
+          } catch {}
+        }
+        if (strokesText && strokes.length === 0) {
+          try {
+            const st = JSON.parse(strokesText);
+            strokes = Array.isArray(st) ? st.map((s, idx) => ({ ...s, strokeIndex: idx })) : [];
+          } catch {}
+        }
+
+        // HR merge
+        const parseHr = (csv, role) => {
+          if (!csv) return [];
+          const lines = csv.trim().split(/\r?\n/).slice(1);
+          return lines.map(l => {
+            const [t, iso, bpm, phase] = l.split(',');
+            return { t: Number(t), iso, bpm: Number(bpm), phase, role, trialIndex: trialIdx };
+          });
+        };
+        const hrM = parseHr(hrMatcher, 'matcher');
+        const hrD = parseHr(hrDirector, 'director');
+        const baselineM = baselineHR?.matcher ?? null;
+        const baselineD = baselineHR?.director ?? null;
+
+        const addHrRows = (list, subset, role, baselineMean) => {
+          subset.forEach(r => {
+            list.push({
+              sessionId: file.name,
+              trial: trialIdx,
+              role,
+              kind: 'raw',
+              t: r.t,
+              bpm: r.bpm,
+              phase: r.phase,
+              n: '',
+              bpm_mean: '',
+              bpm_min: '',
+              bpm_max: '',
+              bpm_std: '',
+              baseline_mean: '',
+              baseline_n: ''
+            });
+          });
+          if (subset.length) {
+            const bpms = subset.map(r => r.bpm);
+            const mean = bpms.reduce((a, v) => a + v, 0) / bpms.length;
+            const min = Math.min(...bpms), max = Math.max(...bpms);
+            const std = Math.sqrt(bpms.reduce((a, v) => a + Math.pow(v - mean, 2), 0) / bpms.length);
+            list.push({
+              sessionId: file.name,
+              trial: trialIdx,
+              role,
+              kind: 'summary',
+              t: '',
+              bpm: '',
+              phase: '',
+              n: bpms.length,
+              bpm_mean: mean,
+              bpm_min: min,
+              bpm_max: max,
+              bpm_std: std,
+              baseline_mean: baselineMean ?? '',
+              baseline_n: ''
+            });
+            // Lightweight HRV stats (for hrStatsRows)
+            const diffs = [];
+            for (let i = 1; i < bpms.length; i++) diffs.push(bpms[i] - bpms[i - 1]);
+            const rmssd = diffs.length ? Math.sqrt(diffs.reduce((a, v) => a + v * v, 0) / diffs.length) : 0;
+            const pnn50 = diffs.length ? diffs.filter(v => Math.abs(v) > 50).length / diffs.length : 0;
+            const rqa = computeHrvRqa(bpms, baselineMean ?? null);
+            hrStatsRows.push({ sessionId: file.name, trial: trialIdx, role, rmssd, pnn50, ...rqa });
+          }
+        };
+
+        addHrRows(hrMatcherRows, hrM, 'matcher', baselineM);
+        addHrRows(hrDirectorRows, hrD, 'director', baselineD);
+
+        // Audio manifest
+        zip.forEach((relPath, entry) => {
+          if (relPath.startsWith(`trials/${tdir}/audio/`) && !entry.dir) {
+            const parts = relPath.split('/');
+            audioRows.push({ sessionId: file.name, trial: trialIdx, filename: parts[parts.length - 1], bytes: entry._data?.uncompressedSize ?? entry._data?.length ?? '' });
+          }
+        });
+
+        if (mapNumber === null || strokes.length === 0) continue;
+        if (!gtCache.has(mapNumber)) gtCache.set(mapNumber, await fetchGt(mapNumber));
+        const gt = gtCache.get(mapNumber);
+        const width = gt?.image?.width || 1024;
+        const height = gt?.image?.height || 1024;
+        const gtMask = gt?.strokes ? strokesToMask(gt, width, height) : new Uint8ClampedArray(width * height);
+        const predMask = strokesToMask({ strokes }, width, height);
+
+        const m = binaryMetrics(gtMask, predMask);
+        const s = ssim(gtMask, predMask);
+        const h = hausdorff(gtMask, predMask, width, height);
+        const cd = chamfer(gtMask, predMask, width, height);
+        const bf = boundaryF(gtMask, predMask, width, height, 2);
+        const coverageGt = gtMask.reduce((a, v) => a + (v > 0 ? 1 : 0), 0) / (width * height);
+        const coveragePred = predMask.reduce((a, v) => a + (v > 0 ? 1 : 0), 0) / (width * height);
+
+        metricsRows.push({
+          sessionId: file.name,
+          trial: trialIdx,
+          mapNumber,
+          iou: m.iou,
+          f1: m.f1,
+          dice: m.dice,
+          precision: m.precision,
+          recall: m.recall,
+          ssim: s,
+          hausdorff: h,
+          chamfer: cd,
+          boundary_f1: bf.f1,
+          boundary_p: bf.precision,
+          boundary_r: bf.recall,
+          coverage_gt: coverageGt,
+          coverage_pred: coveragePred
+        });
+
+        strokes.filter(isDrawableStroke).forEach((s, idx) => {
+          (s.points || []).forEach((p, pi) => {
+            strokesRows.push({
+              sessionId: file.name,
+              trial: trialIdx,
+              mapNumber,
+              strokeIndex: s.strokeIndex ?? idx,
+              pointIndex: pi,
+              t: s.t ?? '',
+              mode: s.mode || 'draw',
+              x: p.x,
+              y: p.y
+            });
+          });
+        });
+
+        manifestRows.push({
+          sessionId: file.name,
+          trial: trialIdx,
+          mapNumber,
+          strokes: strokes.length,
+          strokePoints: strokes.reduce((a, s) => a + (s.points?.length || 0), 0),
+          hrMatcher: hrM.length,
+          hrDirector: hrD.length,
+          audioCount: audioRows.filter(r => r.trial === trialIdx).length,
+          coverage_gt: coverageGt,
+          coverage_pred: coveragePred
+        });
+
+        // Build replay entry — convert absolute epoch timestamps to relative (ms from trial start)
+        const allTs = [
+          ...strokes.map(s => s.t || 0),
+          ...hrM.map(h => h.t || 0),
+          ...hrD.map(h => h.t || 0)
+        ].filter(t => t > 0);
+        const t0 = allTs.length ? Math.min(...allTs) : 0;
+        const relStrokes = strokes.map(s => ({ ...s, t: (s.t || 0) - t0 })).sort((a, b) => a.t - b.t);
+        const relHrM = hrM.map(h => ({ ...h, t: (h.t || 0) - t0 }));
+        const relHrD = hrD.map(h => ({ ...h, t: (h.t || 0) - t0 }));
+        replayState.trials.push({
+          id: `T${String(trialIdx).padStart(2, '0')}`,
+          trial: trialIdx,
+          mapNumber,
+          strokes: relStrokes,
+          hrM: relHrM,
+          hrD: relHrD,
+          width,
+          height,
+          duration: Math.max(
+            relStrokes.reduce((a, s) => Math.max(a, s.t || 0), 0),
+            relHrM.reduce((a, h) => Math.max(a, h.t || 0), 0),
+            relHrD.reduce((a, h) => Math.max(a, h.t || 0), 0),
+            1
+          )
+        });
+      }
+
+      // Send to server for full Python postprocess (RQA, ASR/prosody) and download results
+      try {
+        zipStatus.textContent = 'Uploading for full processing (RQA/ASR)...';
+        const resp = await fetch('/api/process-zip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: file
+        });
+        if (!resp.ok) throw new Error(`Server processing failed: ${resp.status}`);
+        const buf = await resp.arrayBuffer();
+        const outBlob = new Blob([buf], { type: 'application/zip' });
+        const outUrl = URL.createObjectURL(outBlob);
+        const a = document.createElement('a');
+        a.href = outUrl; a.download = 'postprocess_output.zip';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(outUrl); a.remove(); }, 0);
+        zipStatus.textContent = 'Done. Full postprocess ZIP downloaded.';
+
+        // Parse processed outputs for display (speech + hr_stats)
+        try {
+          const outZip = await JSZip.loadAsync(buf);
+          const speechFile = outZip.file('speech.csv');
+          const hrStatsFile = outZip.file('hr_stats.csv');
+          if (speechFile) {
+            const speechText = await speechFile.async('string');
+            const lines = speechText.trim().split(/\r?\n/);
+            const rows = lines.slice(1).map(l => l.split(','));
+            const display = rows.slice(0, 30).map(r => r.join(',')).join('\n');
+            transcriptsPre.textContent = display || 'No transcripts.';
+          } else {
+            transcriptsPre.textContent = 'speech.csv not present (ASR key missing?).';
+          }
+          if (hrStatsFile) {
+            const hrText = await hrStatsFile.async('string');
+            const rows = parseCSV(hrText);
+            replayState.procStats.clear();
+            rows.forEach(r => {
+              const key = `${r.trial}-${r.role}`;
+              replayState.procStats.set(key, r);
+            });
+          }
+        } catch {
+          transcriptsPre.textContent = 'Unable to parse speech.csv from output.';
+        }
+      } catch (err) {
+        console.error(err);
+        zipStatus.textContent = 'Error during server processing: ' + (err?.message || err);
+      }
+
+      // Populate replay dropdown
+      trialSelect.innerHTML = '';
+      replayState.trials.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = `${t.id} (map ${t.mapNumber})`;
+        trialSelect.appendChild(opt);
+      });
+      playBtn.disabled = replayState.trials.length === 0;
+      pauseBtn.disabled = true;
+      if (replayState.trials.length) {
+        replayState.current = replayState.trials[0];
+        renderReplayFrame(0);
+        renderHrPlot(0);
+        statsPre.textContent = 'Ready. Select a trial and press Play.';
+      }
+    }
+
+    zipBtn.addEventListener('click', async () => {
+      if (!(zipInput.files && zipInput.files[0])) return;
+      zipStatus.textContent = 'Processing...';
+      try {
+        await processZip(zipInput.files[0]);
+      } catch (e) {
+        console.error(e);
+        zipStatus.textContent = 'Error: ' + e.message;
+      }
+    });
+
+    // --- Replay helpers ---
+    function renderReplayFrame(tMs) {
+      if (!replayState.current) return;
+      const trial = replayState.current;
+      const canvas = replayCanvas;
+      const ctx = canvas.getContext('2d');
+      canvas.width = trial.width || 1024;
+      canvas.height = trial.height || 1024;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      for (const s of trial.strokes) {
+        if (s.t && s.t > tMs) break;
+        const pts = s.points || [];
+        if (pts.length < 2) continue;
+        const isErase = s.mode === 'erase';
+        ctx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = isErase ? 20 : (s.width || 3);
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    function renderHrPlot(tMs) {
+      if (!replayState.current) return;
+      const trial = replayState.current;
+      const canvas = hrCanvas;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#fafafa';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const series = [
+        { data: trial.hrM, color: '#1976d2', label: 'Matcher' },
+        { data: trial.hrD, color: '#d32f2f', label: 'Director' }
+      ];
+      const maxT = Math.max(
+        trial.hrM.reduce((a, h) => Math.max(a, h.t || 0), 0),
+        trial.hrD.reduce((a, h) => Math.max(a, h.t || 0), 0),
+        1
+      );
+      const allBpm = [...trial.hrM, ...trial.hrD].map(h => h.bpm).filter(Number.isFinite);
+      const minBpm = allBpm.length ? Math.min(...allBpm) : 40;
+      const maxBpm = allBpm.length ? Math.max(...allBpm) : 180;
+      const pad = 10;
+      const xScale = v => pad + (v / maxT) * (canvas.width - 2 * pad);
+      const yScale = v => canvas.height - pad - ((v - minBpm) / (maxBpm - minBpm || 1)) * (canvas.height - 2 * pad);
+      series.forEach(s => {
+        ctx.strokeStyle = s.color;
+        ctx.beginPath();
+        let started = false;
+        s.data.forEach(p => {
+          const x = xScale(p.t || 0);
+          const y = yScale(p.bpm || minBpm);
+          if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+        });
+        ctx.stroke();
+      });
+      // Playhead
+      ctx.strokeStyle = '#666';
+      const px = xScale(tMs);
+      ctx.beginPath();
+      ctx.moveTo(px, pad);
+      ctx.lineTo(px, canvas.height - pad);
+      ctx.stroke();
+    }
+
+    function updateStats(tMs) {
+      if (!replayState.current) return;
+      const trial = replayState.current;
+      const bpmsM = trial.hrM.map(h => h.bpm).filter(Number.isFinite);
+      const bpmsD = trial.hrD.map(h => h.bpm).filter(Number.isFinite);
+      const keyM = `${trial.trial}-matcher`;
+      const keyD = `${trial.trial}-director`;
+      const rqaM = replayState.procStats.get(keyM) || computeHrvRqa(bpmsM);
+      const rqaD = replayState.procStats.get(keyD) || computeHrvRqa(bpmsD);
+      // Simple correlation between matcher/director HR
+      const minLen = Math.min(bpmsM.length, bpmsD.length);
+      let corr = '';
+      if (minLen >= 3) {
+        const xs = bpmsM.slice(0, minLen);
+        const ys = bpmsD.slice(0, minLen);
+        const mx = xs.reduce((a, v) => a + v, 0) / minLen;
+        const my = ys.reduce((a, v) => a + v, 0) / minLen;
+        let num = 0, dx = 0, dy = 0;
+        for (let i = 0; i < minLen; i++) {
+          num += (xs[i] - mx) * (ys[i] - my);
+          dx += Math.pow(xs[i] - mx, 2);
+          dy += Math.pow(ys[i] - my, 2);
+        }
+        corr = num / Math.sqrt(dx * dy || 1);
+      }
+      statsPre.textContent = JSON.stringify({
+        trial: trial.id,
+        mapNumber: trial.mapNumber,
+        rqa: { matcher: rqaM, director: rqaD },
+        hr_corr: corr
+      }, null, 2);
+    }
+
+    function setCurrentTrial(id) {
+      replayState.current = replayState.trials.find(t => t.id === id) || null;
+      replayState.playing = false;
+      playBtn.disabled = !replayState.current;
+      pauseBtn.disabled = true;
+      if (replayState.current) {
+        renderReplayFrame(0);
+        renderHrPlot(0);
+        updateStats(0);
+      }
+    }
+
+    trialSelect.addEventListener('change', () => setCurrentTrial(trialSelect.value));
+    playBtn.addEventListener('click', () => {
+      if (!replayState.current) return;
+      replayState.playing = true;
+      replayState.startTs = performance.now() - replayState.playhead;
+      playBtn.disabled = true;
+      pauseBtn.disabled = false;
+      const step = (nowTs) => {
+        if (!replayState.playing || !replayState.current) return;
+        const tMs = nowTs - replayState.startTs;
+        replayState.playhead = tMs;
+        renderReplayFrame(tMs);
+        renderHrPlot(tMs);
+        updateStats(tMs);
+        if (tMs >= replayState.current.duration) {
+          replayState.playing = false;
+          playBtn.disabled = false;
+          pauseBtn.disabled = true;
+          return;
+        }
+        replayState.timer = requestAnimationFrame(step);
+      };
+      replayState.timer = requestAnimationFrame(step);
+    });
+    pauseBtn.addEventListener('click', () => {
+      replayState.playing = false;
+      playBtn.disabled = false;
+      pauseBtn.disabled = true;
+      if (replayState.timer) cancelAnimationFrame(replayState.timer);
+    });
+  </script>
+</body>
+</html>

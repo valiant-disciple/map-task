@@ -33,12 +33,15 @@ app.post('/api/process-zip', express.raw({ type: 'application/octet-stream', lim
   await fs.promises.writeFile(inZip, req.body);
   try {
     // Run Python processor
-    await runCmd(PYTHON_BIN, [
+    const ppArgs = [
       path.join(__dirname, '..', 'scripts', 'postprocess.py'),
       '--zip', inZip,
       '--gt-dir', path.join(__dirname, '..', 'Ground Truth Maps'),
       '--out', outDir,
-    ]);
+    ];
+    const asrKey = process.env.SMALLEST_AI_KEY;
+    if (asrKey) ppArgs.push('--smallest-key', asrKey);
+    await runCmd(PYTHON_BIN, ppArgs);
     // Zip the output dir
     const outZip = path.join(tmpDir, 'output.zip');
     const zipScript = `
