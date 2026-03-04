@@ -78,7 +78,10 @@ export async function downloadSessionZip(options: {
     trialMap.get(ti)!.push(e);
   }
 
-  const dataTrialIndices = Array.from(trialMap.keys()).filter(ti => ti > warmupCount && ti <= trialTotal).sort((a, b) => a - b);
+  // Export all trials (including warmups) so strokes.json never comes out empty
+  const dataTrialIndices = Array.from(trialMap.keys())
+    .filter(ti => ti >= 1 && ti <= trialTotal)
+    .sort((a, b) => a - b);
 
   const zip = new JSZip();
 
