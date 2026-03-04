@@ -17,6 +17,32 @@ interface HRReading {
   phase: 'baseline' | 'trial' | 'idle';
 }
 
+// Fallback: synthesize a final image from strokes if no final_image event exists.
+function strokesToDataUrl(strokes: { polyline: { x: number; y: number }[]; role?: string; mode?: string }[], size = 1024): string | null {
+  if (!strokes || strokes.length === 0) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const s of strokes) {
+    if (!s.polyline || s.polyline.length < 2) continue;
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = s.mode === 'erase' ? 20 : 3;
+    ctx.beginPath();
+    ctx.moveTo(s.polyline[0].x, s.polyline[0].y);
+    for (let i = 1; i < s.polyline.length; i++) {
+      ctx.lineTo(s.polyline[i].x, s.polyline[i].y);
+    }
+    ctx.stroke();
+  }
+  return canvas.toDataURL('image/png');
+}
+
 function hrReadingsToCSV(readings: HRReading[]): string {
   const header = 'timestamp_unix_ms,timestamp_iso,bpm,phase';
   const rows = readings.map(r => {
@@ -68,9 +94,12 @@ export async function downloadSessionZip(options: {
     const psmmMatcher = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'matcher').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
 
     const modeTimeline = tevents.filter(e => e.type === 'mode_change').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw' }));
-    const strokes = tevents.filter(e => e.type === 'draw_end').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: e.payload?.polyline || [] }));
+    const strokes = tevents
+      .filter(e => e.type === 'draw_stroke' || e.type === 'draw_end')
+      .map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: e.payload?.polyline || [] }));
     const cursor = tevents.filter(e => e.type === 'pointer' && e.payload && typeof e.payload.x === 'number').map((e: any) => ({ t: e.t, role: e.role, x: e.payload.x, y: e.payload.y }));
-    const final = tevents.slice().reverse().find((e: any) => e.type === 'final_image')?.payload?.dataUrl ?? null;
+    const final = tevents.slice().reverse().find((e: any) => e.type === 'final_image')?.payload?.dataUrl
+      ?? strokesToDataUrl(strokes, 1024);
 
     const finalTimes = tevents.filter(e => e.type === 'trial_final_time').map((e: any) => ({
       t: e.t,

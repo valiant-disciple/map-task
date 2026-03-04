@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
 import JSZip from 'jszip';
@@ -84,13 +85,16 @@ function hausdorff(gt, pred, width, height) {
 }
 
 async function imageToMask(buffer, width, height, threshold = 180) {
-  return sharp(buffer)
+  const buf = await sharp(buffer)
     .resize(width, height)
     .greyscale()
     .threshold(threshold)
     .toColourspace('b-w')
     .raw()
     .toBuffer();
+  const out = Buffer.alloc(buf.length);
+  for (let i = 0; i < buf.length; i++) out[i] = 255 - buf[i];
+  return out;
 }
 
 function svgFromStrokes(strokes, width, height) {
@@ -119,11 +123,26 @@ async function strokesToMask(strokes, width, height) {
   return mask;
 }
 
-async function computeMapAccuracy({ groundTruth, matcherFinal, strokes = [], threshold = 180 }) {
-  const meta = await sharp(groundTruth).metadata();
-  const width = meta.width || 800;
-  const height = meta.height || 800;
-  const gtMask = await imageToMask(groundTruth, width, height, threshold);
+async function computeMapAccuracy({ groundTruth, matcherFinal, strokes = [], threshold = 180, gtStrokes = null, gtDims = null }) {
+  let width = 800, height = 800;
+  if (groundTruth) {
+    const meta = await sharp(groundTruth).metadata();
+    width = meta.width || width;
+    height = meta.height || height;
+  } else if (gtDims && gtDims.width && gtDims.height) {
+    width = gtDims.width;
+    height = gtDims.height;
+  }
+
+  let gtMask;
+  if (gtStrokes && gtStrokes.length) {
+    gtMask = await strokesToMask(gtStrokes, width, height);
+  } else if (groundTruth) {
+    gtMask = await imageToMask(groundTruth, width, height, threshold);
+  } else {
+    return { width, height, iou: 0, precision: 0, recall: 0, f1: 0, dice: 0, ssim: 0, hausdorff: 0 };
+  }
+
   let predMask;
   if (matcherFinal) predMask = await imageToMask(matcherFinal, width, height, threshold);
   else predMask = await strokesToMask(strokes, width, height);
@@ -152,10 +171,7 @@ async function transcribeSmallestAI(wav, apiKey) {
   const params = new URLSearchParams({ language: 'en', word_timestamps: 'true' }).toString();
   const resp = await fetch(`${endpoint}?${params}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'audio/wav'
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'audio/wav' },
     body: wav,
     signal: AbortSignal.timeout(120_000)
   });
@@ -175,47 +191,90 @@ async function runMdrqa(series, params, scriptPath) {
     py.stdout.on('data', d => out += d.toString());
     py.stderr.on('data', d => err += d.toString());
     py.on('close', () => {
-      if (err) {
-        resolve({ error: err.trim(), params });
-        return;
-      }
-      try {
-        const parsed = JSON.parse(out);
-        resolve({ ...parsed, params });
-      } catch (e) {
-        resolve({ error: e?.message || 'mdrqa parse failed', params });
-      }
+      if (err) { resolve({ error: err.trim(), params }); return; }
+      try { resolve({ ...JSON.parse(out), params }); }
+      catch (e) { resolve({ error: e?.message || 'mdrqa parse failed', params }); }
     });
     py.stdin.write(JSON.stringify({ series, embedding: params.embedding, delay: params.delay, radius: params.radius }));
     py.stdin.end();
   });
 }
 
-// ---------- ZIP parsing helpers ----------
+// ---------- Helpers ----------
 async function parseCsvHr(buf) {
   const text = buf.toString('utf8').trim();
   const lines = text.split('\n').slice(1);
-  const vals = [];
+  const rows = [];
   for (const line of lines) {
+    if (!line) continue;
     const parts = line.split(',');
+    const t = Number(parts[0]);
     const bpm = Number(parts[2]);
-    if (Number.isFinite(bpm)) vals.push(bpm);
+    const phase = parts[3] || '';
+    if (Number.isFinite(t) && Number.isFinite(bpm)) rows.push({ t, bpm, phase });
   }
-  return vals;
+  return rows;
 }
 
-// Load GT map from repo root or map-task-frontend
 async function loadGroundTruth(mapNumber) {
-  const root = path.resolve(process.cwd());
+  const root = path.resolve(process.cwd(), '..');
   const p1 = path.join(root, `map${mapNumber}g.gif`);
   const p2 = path.join(root, 'map-task-frontend', `map${mapNumber}g.gif`);
-  const candidate = fs.existsSync(p1) ? p1 : p2;
+  const candidate = fs.existsSync(p1) ? p1 : (fs.existsSync(p2) ? p2 : p1);
   return fs.promises.readFile(candidate);
+}
+
+function loadGtStrokes(mapNumber) {
+  const root = path.resolve(process.cwd(), '..');
+  const p = path.join(root, `gt_${mapNumber}.json`);
+  if (!fs.existsSync(p)) return null;
+  try {
+    const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const strokes = Array.isArray(json.strokes) ? json.strokes : [];
+    const image = json.image || {};
+    return { strokes, dims: { width: image.width, height: image.height } };
+  } catch { return null; }
+}
+
+function toIST(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+}
+function normalizeTimes(trialEvents) {
+  const times = trialEvents.map(e => e.t).filter(Boolean);
+  const t0 = times.length ? Math.min(...times) : null;
+  const tEnd = times.length ? Math.max(...times) : null;
+  return { t0, tEnd, t0Ist: t0 ? toIST(t0) : null, tEndIst: tEnd ? toIST(tEnd) : null };
+}
+function remapEventsToRel(trialEvents, t0) {
+  if (!t0) return trialEvents;
+  return trialEvents.map(e => ({ ...e, t_rel: e.t ? e.t - t0 : null }));
+}
+function resampleHr(rows, t0, stepMs = 250) {
+  if (!rows || rows.length === 0 || !t0) return { raw: rows, resampled: [] };
+  const sorted = rows.slice().sort((a, b) => a.t - b.t);
+  const start = sorted[0].t;
+  const end = sorted[sorted.length - 1].t;
+  const resampled = [];
+  for (let t = start; t <= end; t += stepMs) {
+    let i = 0;
+    while (i < sorted.length - 1 && sorted[i + 1].t < t) i++;
+    const a = sorted[i];
+    const b = sorted[Math.min(i + 1, sorted.length - 1)];
+    let bpm = a.bpm;
+    if (b.t !== a.t && t >= a.t && t <= b.t) {
+      const ratio = (t - a.t) / (b.t - a.t);
+      bpm = a.bpm + ratio * (b.bpm - a.bpm);
+    }
+    resampled.push({ t, t_rel: t - t0, bpm, phase: a.phase });
+  }
+  const raw = sorted.map(r => ({ ...r, t_rel: r.t - t0 }));
+  return { raw, resampled };
 }
 
 // ---------- Express app ----------
 const app = express();
-app.use(express.static(path.join(process.cwd(), 'replay-dashboard', 'public')));
+app.use(express.static(path.join(process.cwd(), 'public')));
 
 app.post('/api/process-zip', upload.single('file'), async (req, res) => {
   try {
@@ -235,7 +294,7 @@ app.post('/api/process-zip', upload.single('file'), async (req, res) => {
       }
       const tb = trialBundles.get(ti);
       if (!tb.mapNumber && ev?.payload?.mapNumber) tb.mapNumber = ev.payload.mapNumber;
-      if (ev.type === 'draw_end' && ev.payload?.polyline) tb.strokes.push({ polyline: ev.payload.polyline });
+      if ((ev.type === 'draw_stroke' || ev.type === 'draw_end') && ev.payload?.polyline) tb.strokes.push({ polyline: ev.payload.polyline });
     }
 
     const entries = Object.values(zip.files);
@@ -267,7 +326,9 @@ app.post('/api/process-zip', upload.single('file'), async (req, res) => {
     }
 
     const results = [];
-    const mdrqaScript = path.join(process.cwd(), 'replay-dashboard', 'scripts', 'mdrqa.py');
+    const outZip = new JSZip();
+    const summaryRows = [['trialIndex','mapNumber','iou','f1','dice','precision','recall','ssim','hausdorff']];
+    const mdrqaScript = path.join(process.cwd(), 'scripts', 'mdrqa.py');
     const paramSets = [
       { embedding: 1, delay: 1, radius: 0.05 },
       { embedding: 1, delay: 1, radius: 0.1 },
@@ -277,12 +338,18 @@ app.post('/api/process-zip', upload.single('file'), async (req, res) => {
 
     for (const [ti, tb] of trialBundles.entries()) {
       if (!tb.mapNumber) continue;
-      const gt = await loadGroundTruth(tb.mapNumber);
+      const gtStrokes = loadGtStrokes(tb.mapNumber);
+      const gtImg = gtStrokes ? null : await loadGroundTruth(tb.mapNumber);
       const accuracy = await computeMapAccuracy({
-        groundTruth: gt,
+        groundTruth: gtImg,
         matcherFinal: tb.finalImage || null,
-        strokes: tb.strokes
+        strokes: tb.strokes,
+        gtStrokes: gtStrokes?.strokes || null,
+        gtDims: gtStrokes?.dims || null
       });
+
+      const trialEvents = events.filter(e => (e?.payload?.trialIndex ?? 1) === ti);
+      const timeMeta = normalizeTimes(trialEvents);
 
       // ASR
       const transcripts = {};
@@ -307,23 +374,73 @@ app.post('/api/process-zip', upload.single('file'), async (req, res) => {
         for (const p of paramSets) hrMetrics.matcher.push(await runMdrqa(tb.hr.matcher, p, mdrqaScript));
       }
 
+      // HR resampled & normalized to t_rel
+      const hrSeries = {};
+      if (tb.hr.director.length) hrSeries.director = resampleHr(tb.hr.director, timeMeta.t0);
+      if (tb.hr.matcher.length) hrSeries.matcher = resampleHr(tb.hr.matcher, timeMeta.t0);
+
+      const eventsRel = remapEventsToRel(trialEvents, timeMeta.t0);
+
       results.push({
         trialIndex: ti,
         mapNumber: tb.mapNumber,
         mapAccuracy: accuracy,
         transcripts,
-        hrMetrics
+        hrMetrics,
+        hrSeries,
+        events: eventsRel,
+        time: { start_ts: timeMeta.t0, end_ts: timeMeta.tEnd, start_ist: timeMeta.t0Ist, end_ist: timeMeta.tEndIst }
+      });
+
+      // Build CSVs per trial
+      const trialDir = outZip.folder(`trials/T${String(ti).padStart(2,'0')}`);
+      if (!trialDir) continue;
+      const acc = accuracy || {};
+      summaryRows.push([ti, tb.mapNumber, acc.iou ?? '', acc.f1 ?? '', acc.dice ?? '', acc.precision ?? '', acc.recall ?? '', acc.ssim ?? '', acc.hausdorff ?? '']);
+      trialDir.file('map_metrics.csv',
+        ['metric,value',
+         `iou,${acc.iou ?? ''}`,
+         `f1,${acc.f1 ?? ''}`,
+         `dice,${acc.dice ?? ''}`,
+         `precision,${acc.precision ?? ''}`,
+         `recall,${acc.recall ?? ''}`,
+         `ssim,${acc.ssim ?? ''}`,
+         `hausdorff,${acc.hausdorff ?? ''}`].join('\n'));
+
+      // HR CSVs
+      const hrDir = trialDir.folder('hr');
+      const hrRoles = ['director','matcher'];
+      hrRoles.forEach(role => {
+        const series = hrSeries[role];
+        if (!hrDir || !series) return;
+        if (series.raw?.length) hrDir.file(`${role}_raw.csv`, ['t_ms,t_rel_ms,bpm,phase', ...series.raw.map(r => `${r.t},${r.t_rel},${r.bpm},${r.phase||''}`)].join('\n'));
+        if (series.resampled?.length) hrDir.file(`${role}_resampled.csv`, ['t_ms,t_rel_ms,bpm,phase', ...series.resampled.map(r => `${r.t},${r.t_rel},${r.bpm},${r.phase||''}`)].join('\n'));
+      });
+
+      // MDRQA metrics
+      const mdDir = trialDir.folder('mdrqa');
+      Object.entries(hrMetrics).forEach(([role, arr]) => { if (mdDir) mdDir.file(`${role}.json`, JSON.stringify(arr, null, 2)); });
+
+      // Transcripts
+      const trDir = trialDir.folder('transcripts');
+      Object.entries(transcripts).forEach(([role, t]) => {
+        if (!trDir) return;
+        const text = typeof t === 'object' && t?.transcription ? t.transcription : JSON.stringify(t);
+        trDir.file(`${role}.txt`, text);
+        trDir.file(`${role}.json`, JSON.stringify(t, null, 2));
       });
     }
 
-    res.json({ trials: results });
+    outZip.file('summary_map_metrics.csv', summaryRows.map(r => r.join(',')).join('\n'));
+    const zipBase64 = await outZip.generateAsync({ type: 'base64' });
+    res.json({ trials: results, zipBase64 });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e?.message || 'processing failed' });
   }
 });
 
-const port = process.env.PORT || 4000;
+const port = process.env.PORT || 4100;
 app.listen(port, () => {
   console.log(`Replay dashboard server running on http://localhost:${port}`);
 });
