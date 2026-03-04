@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GT Maker</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #222; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    button { padding: 6px 10px; border: none; border-radius: 4px; background: #0b5; color: #fff; cursor: pointer; }
+    button.secondary { background: #444; }
+    canvas { border: 1px solid #ccc; background: #fff; cursor: crosshair; }
+    .panel { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h2>GT Maker</h2>
+  <div class="row">
+    <label>Width: <input type="number" id="w" value="1024" min="16" max="4096" step="16" style="width:80px;"></label>
+    <label>Height: <input type="number" id="h" value="1024" min="16" max="4096" step="16" style="width:80px;"></label>
+    <label>Stroke: <input type="number" id="lw" value="3" min="1" max="50" style="width:60px;"></label>
+    <label>Mode:
+      <select id="mode">
+        <option value="draw">draw</option>
+        <option value="erase">erase</option>
+      </select>
+    </label>
+    <button id="resizeBtn" class="secondary">Resize</button>
+    <button id="clearBtn" class="secondary">Clear</button>
+    <button id="undoBtn" class="secondary">Undo</button>
+    <button id="exportBtn">Export strokes.json</button>
+    <a href="score.html" class="secondary" style="padding:6px 10px; text-decoration:none; color:#fff; background:#555; border-radius:4px;">Go to score</a>
+  </div>
+
+  <div class="panel">
+    <canvas id="c" width="1024" height="1024"></canvas>
+  </div>
+
+  <script>
+    const c = document.getElementById('c');
+    const ctx = c.getContext('2d');
+    let strokes = [];
+    let current = null;
+    let isDown = false;
+
+    function redraw() {
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      for (const s of strokes) {
+        const pts = s.points || [];
+        if (pts.length < 2) continue;
+        const erase = s.mode === 'erase';
+        ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+        ctx.strokeStyle = erase ? '#000' : '#000';
+        ctx.lineWidth = s.width || 3;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    c.addEventListener('mousedown', (e) => {
+      const rect = c.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      isDown = true;
+      current = { mode: document.getElementById('mode').value, width: Number(document.getElementById('lw').value) || 3, points: [{ x, y }] };
+      strokes.push(current);
+      redraw();
+    });
+    c.addEventListener('mousemove', (e) => {
+      if (!isDown || !current) return;
+      const rect = c.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      current.points.push({ x, y });
+      redraw();
+    });
+    c.addEventListener('mouseup', () => { isDown = false; current = null; });
+    c.addEventListener('mouseleave', () => { isDown = false; current = null; });
+
+    document.getElementById('clearBtn').onclick = () => { strokes = []; redraw(); };
+    document.getElementById('undoBtn').onclick = () => { strokes.pop(); redraw(); };
+    document.getElementById('resizeBtn').onclick = () => {
+      const w = Number(document.getElementById('w').value) || 1024;
+      const h = Number(document.getElementById('h').value) || 1024;
+      c.width = w; c.height = h; redraw();
+    };
+
+    document.getElementById('exportBtn').onclick = () => {
+      const out = {
+        image: { width: c.width, height: c.height },
+        strokes: strokes.map(s => ({ mode: s.mode, width: s.width, points: s.points, polyline: s.points }))
+      };
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'strokes.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+    };
+
+    redraw();
+  </script>
+</body>
+</html>
