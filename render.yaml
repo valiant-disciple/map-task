@@ -29,6 +29,20 @@ services:
 
   - type: web
     runtime: node
+    name: watch-hr-session
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: CORS_ORIGIN
+        value: "*"
+    autoDeploy: true
+
+  - type: web
+    runtime: node
     name: map-task-frontend
     plan: free
     rootDir: map-task-frontend
@@ -36,9 +50,15 @@ services:
     startCommand: serve dist -s -l $PORT
     envVars:
       - key: VITE_WS_URL
-        value: wss://watch-hr-backend-u96c.onrender.com
+        value: wss://watch-hr-session-u96c.onrender.com
       - key: VITE_WS_URL_DIRECTOR
-        value: wss://watch-hr-backend-u96c.onrender.com
+        value: wss://watch-hr-session-u96c.onrender.com
       - key: VITE_WS_URL_MATCHER
-        value: wss://watch-hr-backend-matcher-u96c.onrender.com
+        value: wss://watch-hr-session-u96c.onrender.com
+      - key: VITE_SESSION_WS_URL
+        value: wss://watch-hr-session-u96c.onrender.com
+      - key: VITE_SESSION_WS_URL_DIRECTOR
+        value: wss://watch-hr-session-u96c.onrender.com
+      - key: VITE_SESSION_WS_URL_MATCHER
+        value: wss://watch-hr-session-u96c.onrender.com
     autoDeploy: true
