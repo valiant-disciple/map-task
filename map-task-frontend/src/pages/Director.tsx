@@ -184,11 +184,18 @@ export default function Director() {
     if (endedRef.current) return;
     endedRef.current = true;
 
+    // Set HR phase to idle and save HR data (director)
+    watchService.setPhase('idle');
+    const ti = activeTrialRef.current;
+    const trialHR = watchService.getReadingsForPhase('trial');
+    const existing = hrDataRef.current.get(ti) || { director: [], matcher: [] };
+    existing.director = [...existing.director, ...trialHR];
+    hrDataRef.current.set(ti, existing);
+
     // Stop recording
     if (audioRecorder.isRecording()) {
       audioRecorder.stop().then(res => {
         // console.log('[Director] Stopped recording', res);
-        const ti = activeTrialRef.current;
         const current = audioFilesRef.current.get(ti) || [];
         current.push({ blob: res.blob, filename: `director_T${ti}.webm` });
         audioFilesRef.current.set(ti, current);
