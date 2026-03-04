@@ -1,10 +1,10 @@
 // Replaced Supabase with custom WebSocket implementation
 import type { EventRecord } from '../types';
 
-// Use standard WebSocket — configurable via VITE_WS_URL env var
-const WS_URL = import.meta.env.VITE_WS_URL || '';
-const WS_URL_DIRECTOR = import.meta.env.VITE_WS_URL_DIRECTOR || '';
-const WS_URL_MATCHER = import.meta.env.VITE_WS_URL_MATCHER || '';
+// Use dedicated session WebSocket URLs if provided, else fallback to VITE_WS_URL
+const BASE_WS = import.meta.env.VITE_SESSION_WS_URL || import.meta.env.VITE_WS_URL || '';
+const WS_URL_DIRECTOR = import.meta.env.VITE_SESSION_WS_URL_DIRECTOR || import.meta.env.VITE_WS_URL_DIRECTOR || BASE_WS;
+const WS_URL_MATCHER = import.meta.env.VITE_SESSION_WS_URL_MATCHER || import.meta.env.VITE_WS_URL_MATCHER || BASE_WS;
 
 type Role = 'director' | 'matcher';
 
