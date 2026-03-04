@@ -11,25 +11,36 @@
     button.secondary { background: #444; }
     canvas { border: 1px solid #ccc; background: #fff; cursor: crosshair; }
     .panel { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
+    .stack { display: flex; flex-direction: column; gap: 8px; }
   </style>
 </head>
 <body>
   <h2>GT Maker</h2>
-  <div class="row">
-    <label>Width: <input type="number" id="w" value="1024" min="16" max="4096" step="16" style="width:80px;"></label>
-    <label>Height: <input type="number" id="h" value="1024" min="16" max="4096" step="16" style="width:80px;"></label>
-    <label>Stroke: <input type="number" id="lw" value="3" min="1" max="50" style="width:60px;"></label>
-    <label>Mode:
-      <select id="mode">
-        <option value="draw">draw</option>
-        <option value="erase">erase</option>
-      </select>
-    </label>
-    <button id="resizeBtn" class="secondary">Resize</button>
-    <button id="clearBtn" class="secondary">Clear</button>
-    <button id="undoBtn" class="secondary">Undo</button>
-    <button id="exportBtn">Export strokes.json</button>
-    <a href="score.html" class="secondary" style="padding:6px 10px; text-decoration:none; color:#fff; background:#555; border-radius:4px;">Go to score</a>
+  <div class="stack">
+    <div class="row">
+      <label>Width: <input type="number" id="w" value="1024" min="16" max="4096" step="16" style="width:80px;"></label>
+      <label>Height: <input type="number" id="h" value="1024" min="16" max="4096" step="16" style="width:80px;"></label>
+      <label>Stroke: <input type="number" id="lw" value="3" min="1" max="50" style="width:60px;"></label>
+      <label>Mode:
+        <select id="mode">
+          <option value="draw">draw</option>
+          <option value="erase">erase</option>
+        </select>
+      </label>
+      <label>Zoom: <input type="range" id="zoom" min="0.5" max="2" step="0.1" value="1" style="width:120px;"> <span id="zoomVal">1.0x</span></label>
+      <button id="resizeBtn" class="secondary">Resize</button>
+      <button id="clearBtn" class="secondary">Clear</button>
+      <button id="undoBtn" class="secondary">Undo</button>
+      <button id="redoBtn" class="secondary">Redo</button>
+    </div>
+    <div class="row">
+      <label>BG image: <input type="file" id="bgInput" accept="image/*"></label>
+      <label>Import strokes.json: <input type="file" id="importStrokes" accept=".json"></label>
+      <button id="exportBtn">Export strokes.json</button>
+      <button id="exportPngBtn" class="secondary">Export PNG</button>
+      <span id="meta">Strokes: 0</span>
+      <a href="score.html" class="secondary" style="padding:6px 10px; text-decoration:none; color:#fff; background:#555; border-radius:4px;">Go to score</a>
+    </div>
   </div>
 
   <div class="panel">
@@ -39,20 +50,37 @@
   <script>
     const c = document.getElementById('c');
     const ctx = c.getContext('2d');
+    const bgInput = document.getElementById('bgInput');
+    const importStrokes = document.getElementById('importStrokes');
+    const zoomInput = document.getElementById('zoom');
+    const zoomVal = document.getElementById('zoomVal');
+    const meta = document.getElementById('meta');
+
     let strokes = [];
+    let redoStack = [];
     let current = null;
     let isDown = false;
+    let bgImage = null;
+    let zoom = 1;
+
+    function updateMeta() {
+      meta.textContent = `Strokes: ${strokes.length}`;
+    }
 
     function redraw() {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, c.width, c.height);
+      ctx.save();
+      ctx.scale(zoom, zoom);
+      if (bgImage) ctx.drawImage(bgImage, 0, 0, c.width, c.height);
       for (const s of strokes) {
         const pts = s.points || [];
         if (pts.length < 2) continue;
         const erase = s.mode === 'erase';
         ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
-        ctx.strokeStyle = erase ? '#000' : '#000';
+        ctx.strokeStyle = '#000';
         ctx.lineWidth = s.width || 3;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
@@ -61,36 +89,91 @@
         for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
         ctx.stroke();
       }
+      ctx.restore();
       ctx.globalCompositeOperation = 'source-over';
+      updateMeta();
+    }
+
+    function canvasToLogical(e) {
+      const rect = c.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / zoom;
+      const y = (e.clientY - rect.top) / zoom;
+      return { x, y };
     }
 
     c.addEventListener('mousedown', (e) => {
-      const rect = c.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const { x, y } = canvasToLogical(e);
       isDown = true;
       current = { mode: document.getElementById('mode').value, width: Number(document.getElementById('lw').value) || 3, points: [{ x, y }] };
       strokes.push(current);
+      redoStack = [];
       redraw();
     });
     c.addEventListener('mousemove', (e) => {
       if (!isDown || !current) return;
-      const rect = c.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const { x, y } = canvasToLogical(e);
       current.points.push({ x, y });
       redraw();
     });
-    c.addEventListener('mouseup', () => { isDown = false; current = null; });
-    c.addEventListener('mouseleave', () => { isDown = false; current = null; });
+    const endStroke = () => { isDown = false; current = null; };
+    c.addEventListener('mouseup', endStroke);
+    c.addEventListener('mouseleave', endStroke);
 
-    document.getElementById('clearBtn').onclick = () => { strokes = []; redraw(); };
-    document.getElementById('undoBtn').onclick = () => { strokes.pop(); redraw(); };
+    document.getElementById('clearBtn').onclick = () => { strokes = []; redoStack = []; redraw(); };
+    document.getElementById('undoBtn').onclick = () => { const s = strokes.pop(); if (s) redoStack.push(s); redraw(); };
+    document.getElementById('redoBtn').onclick = () => { const s = redoStack.pop(); if (s) strokes.push(s); redraw(); };
     document.getElementById('resizeBtn').onclick = () => {
       const w = Number(document.getElementById('w').value) || 1024;
       const h = Number(document.getElementById('h').value) || 1024;
       c.width = w; c.height = h; redraw();
     };
+
+    bgInput.addEventListener('change', () => {
+      const file = bgInput.files?.[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        document.getElementById('w').value = String(c.width);
+        document.getElementById('h').value = String(c.height);
+        bgImage = img;
+        redraw();
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    });
+
+    importStrokes.addEventListener('change', async () => {
+      const file = importStrokes.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (data?.image?.width && data?.image?.height) {
+          c.width = data.image.width;
+          c.height = data.image.height;
+          document.getElementById('w').value = String(c.width);
+          document.getElementById('h').value = String(c.height);
+        }
+        strokes = Array.isArray(data?.strokes) ? data.strokes.map(s => ({
+          mode: s.mode || 'draw',
+          width: s.width || 3,
+          points: (s.points || s.polyline || []).map(p => ({ x: +p.x, y: +p.y }))
+        })) : [];
+        redoStack = [];
+        redraw();
+      } catch (e) {
+        alert('Import failed: ' + (e?.message || e));
+      }
+    });
+
+    zoomInput.addEventListener('input', () => {
+      zoom = Number(zoomInput.value) || 1;
+      zoomVal.textContent = `${zoom.toFixed(1)}x`;
+      redraw();
+    });
 
     document.getElementById('exportBtn').onclick = () => {
       const out = {
@@ -103,6 +186,18 @@
       a.href = url; a.download = 'strokes.json';
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+    };
+
+    document.getElementById('exportPngBtn').onclick = () => {
+      redraw();
+      c.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'gt.png';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+      });
     };
 
     redraw();
