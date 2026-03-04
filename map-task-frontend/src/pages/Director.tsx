@@ -54,6 +54,7 @@ export default function Director() {
   // HR state
   const [baselineDone, setBaselineDone] = useState(false);
   const [baselineHR, setBaselineHR] = useState<number | null>(null);
+  const matcherBaselineRef = useRef<number | null>(null);
   const hrDataRef = useRef<Map<number, { director: HRReading[]; matcher: HRReading[] }>>(new Map());
   const incomingHRChunksRef = useRef<Map<string, { data: string }>>(new Map());
 
@@ -313,7 +314,7 @@ export default function Director() {
       channelRef.current?.on('broadcast', { event: 'baseline_complete' }, ({ payload }) => {
         if (!payload || payload.role !== 'matcher') return;
         console.log(`[Director] Matcher baseline complete: ${payload.avgBpm} bpm`);
-        // Could store matcher baseline HR here if needed
+        matcherBaselineRef.current = payload.avgBpm ?? null;
       });
 
     }
@@ -464,7 +465,7 @@ export default function Director() {
       finalImageDataUrl: null,
       audioFiles: audioFilesRef.current,
       hrData: hrDataRef.current,
-      baselineHR: { director: baselineHR, matcher: null } // Matcher baseline comes via event
+      baselineHR: { director: baselineHR, matcher: matcherBaselineRef.current }
     });
   }
 
