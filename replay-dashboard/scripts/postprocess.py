@@ -15,6 +15,7 @@ Outputs in --out:
 """
 
 import argparse
+import datetime
 import io
 import json
 import math
@@ -38,11 +39,23 @@ try:
     from pyrqa.settings import Settings
     from pyrqa.computation import RQAComputation
     from pyrqa.metric import EuclideanMetric
+    from pyrqa.neighbourhood import FixedRadius
+    from pyrqa.analysis_type import Cross
     HAS_RQA = True
 except Exception:
     HAS_RQA = False
 
 INF = 1e12
+
+
+def epoch_to_iso(t) -> str:
+    """Convert Unix epoch milliseconds to ISO 8601 string, or empty if invalid."""
+    if t is None or t == "":
+        return ""
+    try:
+        return datetime.datetime.fromtimestamp(int(t) / 1000, tz=datetime.timezone.utc).isoformat()
+    except (ValueError, TypeError, OSError):
+        return ""
 
 
 def load_gt(gt_dir: str, map_number: int):
@@ -275,6 +288,39 @@ def hr_features(hr: List[dict], baseline_mean: float = None, baseline_n: int = 0
     return feats
 
 
+def crqa_features(bpms_m: List[float], bpms_d: List[float],
+                  baseline_m: float = None, baseline_d: float = None) -> Dict[str, float]:
+    """Cross-Recurrence Quantification Analysis between matcher and director HR."""
+    if not HAS_RQA or len(bpms_m) < 3 or len(bpms_d) < 3:
+        return {}
+    if baseline_m is not None:
+        bpms_m = [b - baseline_m for b in bpms_m]
+    if baseline_d is not None:
+        bpms_d = [b - baseline_d for b in bpms_d]
+    std_both = float(np.std(bpms_m + bpms_d))
+    threshold = max(0.1 * std_both, 0.01) if std_both > 0 else 0.1
+    try:
+        ts_m = TimeSeries(bpms_m, embedding_dimension=2, time_delay=1)
+        ts_d = TimeSeries(bpms_d, embedding_dimension=2, time_delay=1)
+        settings = Settings((ts_m, ts_d),
+                            analysis_type=Cross,
+                            neighbourhood=FixedRadius(threshold),
+                            similarity_measure=EuclideanMetric,
+                            theiler_corrector=0)
+        comp = RQAComputation.create(settings)
+        res = comp.run()
+        return {
+            "crqa_rr": float(res.recurrence_rate),
+            "crqa_det": float(res.determinism),
+            "crqa_lam": float(res.laminarity),
+            "crqa_entr": float(res.entropy_diagonal_lines),
+            "crqa_mean_diag": float(res.average_diagonal_line_length),
+            "crqa_max_diag": float(res.longest_diagonal_line_length),
+        }
+    except Exception:
+        return {}
+
+
 def parse_hr_csv(csv_text: str, role: str, trial: int) -> List[dict]:
     if not csv_text:
         return []
@@ -404,6 +450,7 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             })
 
             for sidx, sraw in enumerate(strokes):
+                t_val = sraw.get("t", "")
                 for pidx, p in enumerate(sraw.get("points", [])):
                     strokes_rows.append({
                         "sessionId": os.path.basename(zip_path),
@@ -411,7 +458,8 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                         "mapNumber": map_number,
                         "strokeIndex": sraw.get("strokeIndex", sidx),
                         "pointIndex": pidx,
-                        "t": sraw.get("t", ""),
+                        "t_unix_ms": t_val,
+                        "t_iso": epoch_to_iso(t_val),
                         "mode": sraw.get("mode", "draw"),
                         "x": p["x"],
                         "y": p["y"],
@@ -426,12 +474,14 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                 baseline_mean = float(np.mean(baseline_bpms)) if baseline_bpms else zip_baseline.get(role)
                 baseline_n = len(baseline_bpms) if baseline_bpms else (1 if zip_baseline.get(role) is not None else 0)
                 for r in rows:
+                    t_val = r.get("t", "")
                     role_rows.append({
                         "sessionId": os.path.basename(zip_path),
                         "trial": trial_idx,
                         "role": role,
                         "kind": "raw",
-                        "t": r.get("t", ""),
+                        "t_unix_ms": t_val,
+                        "t_iso": epoch_to_iso(t_val),
                         "bpm": r.get("bpm", ""),
                         "phase": r.get("phase", ""),
                         "n": "",
@@ -447,7 +497,8 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                         "trial": trial_idx,
                         "role": role,
                         "kind": "summary",
-                        "t": "",
+                        "t_unix_ms": "",
+                        "t_iso": "",
                         "bpm": "",
                         "phase": "",
                         "n": len(bpms),
@@ -466,6 +517,19 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
 
             add_hr_rows(hr_matcher_rows, hr_m, "matcher")
             add_hr_rows(hr_director_rows, hr_d, "director")
+
+            # Cross-recurrence (MDRQA) between matcher and director
+            bpms_m = [r["bpm"] for r in hr_m if isinstance(r.get("bpm"), (int, float, np.floating))]
+            bpms_d = [r["bpm"] for r in hr_d if isinstance(r.get("bpm"), (int, float, np.floating))]
+            bl_m = [r["bpm"] for r in hr_m if str(r.get("phase", "")).lower() == "baseline" and isinstance(r.get("bpm"), (int, float, np.floating))]
+            bl_d = [r["bpm"] for r in hr_d if str(r.get("phase", "")).lower() == "baseline" and isinstance(r.get("bpm"), (int, float, np.floating))]
+            base_m = float(np.mean(bl_m)) if bl_m else zip_baseline.get("matcher")
+            base_d = float(np.mean(bl_d)) if bl_d else zip_baseline.get("director")
+            crqa = crqa_features(bpms_m, bpms_d, baseline_m=base_m, baseline_d=base_d)
+            if crqa:
+                crqa_row = {"sessionId": os.path.basename(zip_path), "trial": trial_idx, "role": "cross"}
+                crqa_row.update(crqa)
+                hr_stats_rows.append(crqa_row)
 
             # Audio
             for rel in zf.namelist():
@@ -551,12 +615,14 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                 m_ts = binary_metrics(gt_mask, current_mask)
                 cd_ts = chamfer(gt_mask, current_mask)
                 bf_ts = boundary_f(gt_mask, current_mask, 2)
+                t_val = sraw.get("t", "")
                 ts_rows.append({
                     "sessionId": os.path.basename(zip_path),
                     "trial": trial_idx,
                     "mapNumber": map_number,
                     "step": step,
-                    "t": sraw.get("t", ""),
+                    "t_unix_ms": t_val,
+                    "t_iso": epoch_to_iso(t_val),
                     "iou": m_ts["iou"],
                     "f1": m_ts["f1"],
                     "dice": m_ts["dice"],
