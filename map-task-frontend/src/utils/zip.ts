@@ -141,10 +141,20 @@ export async function downloadSessionZip(options: {
 
     const modeTimeline = tevents.filter(e => e.type === 'mode_change').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw' }));
     const rawStrokes = tevents
-      .filter(e => (e.type === 'draw_stroke' || e.type === 'draw_end') && e.role === 'matcher')
+      .filter(e =>
+        (e.type === 'draw_stroke' || e.type === 'draw_end') &&
+        e.role === 'matcher' &&
+        (e.payload?.mapNumber === undefined || e.payload?.mapNumber === mapNumber)
+      )
       .map((e: any) => {
         const pts = e.payload?.polyline?.length ? e.payload.polyline : (e.payload?.points ?? []);
-        return { t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: pts };
+        return {
+          t: e.t,
+          role: e.role,
+          mode: e.payload?.mode || 'draw',
+          polyline: pts,
+          mapNumber: e.payload?.mapNumber
+        };
       });
     const strokes = cleanStrokes(rawStrokes, 'matcher');
     const cursor = tevents.filter(e => e.type === 'pointer' && e.payload && typeof e.payload.x === 'number').map((e: any) => ({ t: e.t, role: e.role, x: e.payload.x, y: e.payload.y }));
