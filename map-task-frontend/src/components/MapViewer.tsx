@@ -74,15 +74,14 @@ export default function MapViewer({ src, isInteractive = true, isErase = false, 
     redraw();
   }, [remoteStrokes, localStrokes]);
 
-  // Handle Resize
+  // Handle Resize — canvas resolution tracks image natural size for pixel-accurate strokes
   useEffect(() => {
-    const CANVAS_RES = 1024;
     const ob = new ResizeObserver(() => {
       if (containerRef.current && canvasRef.current) {
-        const img = containerRef.current.querySelector('img');
-        if (img) {
-          canvasRef.current.width = CANVAS_RES;
-          canvasRef.current.height = CANVAS_RES;
+        const img = containerRef.current.querySelector('img') as HTMLImageElement | null;
+        if (img && img.naturalWidth) {
+          canvasRef.current.width = img.naturalWidth;
+          canvasRef.current.height = img.naturalHeight;
           canvasRef.current.style.width = `${img.clientWidth}px`;
           canvasRef.current.style.height = `${img.clientHeight}px`;
           redraw();
@@ -181,16 +180,14 @@ export default function MapViewer({ src, isInteractive = true, isErase = false, 
         alt="Map"
         className="map-img"
         style={{ display: 'block', pointerEvents: 'none', userSelect: 'none', maxWidth: '100%' }}
-        onLoad={() => {
-          if (containerRef.current && canvasRef.current) {
-            const img = containerRef.current.querySelector('img');
-            if (img) {
-              canvasRef.current.width = 1024;
-              canvasRef.current.height = 1024;
-              canvasRef.current.style.width = `${img.clientWidth}px`;
-              canvasRef.current.style.height = `${img.clientHeight}px`;
-              redraw();
-            }
+        onLoad={(e) => {
+          const imgEl = e.currentTarget as HTMLImageElement;
+          if (canvasRef.current && imgEl.naturalWidth) {
+            canvasRef.current.width = imgEl.naturalWidth;
+            canvasRef.current.height = imgEl.naturalHeight;
+            canvasRef.current.style.width = `${imgEl.clientWidth}px`;
+            canvasRef.current.style.height = `${imgEl.clientHeight}px`;
+            redraw();
           }
         }}
       />

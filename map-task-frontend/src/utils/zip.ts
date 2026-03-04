@@ -18,7 +18,7 @@ interface HRReading {
 }
 
 // Fallback: synthesize a final image from strokes if no final_image event exists.
-type StrokeLike = { polyline?: { x: number; y: number }[]; points?: { x: number; y: number }[]; role?: string; mode?: string };
+type StrokeLike = { polyline?: { x: number; y: number; t?: number }[]; points?: { x: number; y: number; t?: number }[]; role?: string; mode?: string };
 
 function dist2(a: { x: number; y: number }, b: { x: number; y: number }) {
   const dx = a.x - b.x, dy = a.y - b.y;
@@ -40,7 +40,7 @@ function cleanStrokes(raw: StrokeLike[], role: 'matcher' | 'director' | 'any' = 
   return raw
     .map(s => {
       const pts = s.polyline?.length ? s.polyline : (s.points ?? []);
-      const normPts = Array.isArray(pts) ? pts.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => ({ x: +p.x, y: +p.y })) : [];
+      const normPts = Array.isArray(pts) ? pts.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => ({ x: +p.x, y: +p.y, ...(p.t != null ? { t: p.t } : {}) })) : [];
       const mode = s.mode || 'draw';
       return { ...s, mode, points: normPts, polyline: normPts };
     })
@@ -55,16 +55,16 @@ function cleanStrokes(raw: StrokeLike[], role: 'matcher' | 'director' | 'any' = 
     });
 }
 
-function strokesToDataUrl(strokes: StrokeLike[], size = 1024): string | null {
+function strokesToDataUrl(strokes: StrokeLike[], width = 651, height = 900): string | null {
   const cleaned = cleanStrokes(strokes, 'matcher');
   if (!cleaned.length) return null;
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, size, size);
+  ctx.fillRect(0, 0, width, height);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const s of cleaned) {

@@ -59,8 +59,11 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
     res.setHeader('Content-Disposition', 'attachment; filename="postprocess_output.zip"');
     fs.createReadStream(outZip).pipe(res);
   } catch (e) {
-    console.error('process-zip failed', e);
-    res.status(500).send(e?.message || 'Processing failed');
+    console.error('process-zip failed', e?.message || e);
+    if (e?.stderr) console.error('STDERR:', e.stderr);
+    if (e?.stdout) console.error('STDOUT:', e.stdout);
+    const detail = [e?.message, e?.stderr, e?.stdout].filter(Boolean).join('\n');
+    res.status(500).send(detail || 'Processing failed');
   }
 });
 

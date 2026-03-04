@@ -229,7 +229,7 @@
       if (strokeBox) return { ...strokeBox, source: 'stroke_bbox' };
 
       // Fallback
-      return { width: 1024, height: 1024, source: 'fallback_1024' };
+      return { width: 651, height: 900, source: 'fallback_651x900' };
     }
 
     function binaryMetrics(gtMask, predMask) {
@@ -814,8 +814,8 @@
         if (mapNumber === null || strokes.length === 0) continue;
         if (!gtCache.has(mapNumber)) gtCache.set(mapNumber, await fetchGt(mapNumber));
         const gt = gtCache.get(mapNumber);
-        const width = gt?.image?.width || 1024;
-        const height = gt?.image?.height || 1024;
+        const width = gt?.image?.width || 651;
+        const height = gt?.image?.height || 900;
         const gtMask = gt?.strokes ? strokesToMask(gt, width, height) : new Uint8ClampedArray(width * height);
         const predMask = strokesToMask({ strokes }, width, height);
 
@@ -987,8 +987,8 @@
       const trial = replayState.current;
       const canvas = replayCanvas;
       const ctx = canvas.getContext('2d');
-      canvas.width = trial.width || 1024;
-      canvas.height = trial.height || 1024;
+      canvas.width = trial.width || 651;
+      canvas.height = trial.height || 900;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);

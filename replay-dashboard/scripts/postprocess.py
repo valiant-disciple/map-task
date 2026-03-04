@@ -421,8 +421,8 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             if map_number not in gt_cache:
                 gt_cache[map_number] = load_gt(gt_dir, map_number)
             gt = gt_cache[map_number]
-            width = gt.get("image", {}).get("width", 1024)
-            height = gt.get("image", {}).get("height", 1024)
+            width = gt.get("image", {}).get("width", 651)
+            height = gt.get("image", {}).get("height", 900)
             gt_mask = strokes_to_mask(gt.get("strokes", []), width, height)
             pred_mask = strokes_to_mask(strokes, width, height)
 
