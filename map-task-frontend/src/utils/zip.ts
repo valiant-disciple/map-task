@@ -30,10 +30,14 @@ function strokesToDataUrl(strokes: { polyline?: { x: number; y: number }[]; poin
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const s of strokes) {
+    const mode = s.mode || 'draw';
+    if (mode !== 'draw' && mode !== 'erase') continue; // ignore pointer/non-draw
     const pts = s.polyline?.length ? s.polyline : (s.points ?? []);
     if (!pts || pts.length < 2) continue;
+    const isErase = mode === 'erase';
+    ctx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over';
     ctx.strokeStyle = '#ff0000';
-    ctx.lineWidth = s.mode === 'erase' ? 20 : 3;
+    ctx.lineWidth = isErase ? 20 : 3;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) {
@@ -41,6 +45,7 @@ function strokesToDataUrl(strokes: { polyline?: { x: number; y: number }[]; poin
     }
     ctx.stroke();
   }
+  ctx.globalCompositeOperation = 'source-over';
   return canvas.toDataURL('image/png');
 }
 
@@ -99,7 +104,7 @@ export async function downloadSessionZip(options: {
 
     const modeTimeline = tevents.filter(e => e.type === 'mode_change').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || 'draw' }));
     const strokes = tevents
-      .filter(e => e.type === 'draw_stroke' || e.type === 'draw_end')
+      .filter(e => (e.type === 'draw_stroke' || e.type === 'draw_end') && e.role === 'matcher')
       .map((e: any) => {
         const pts = e.payload?.polyline?.length ? e.payload.polyline : (e.payload?.points ?? []);
         return { t: e.t, role: e.role, mode: e.payload?.mode || 'draw', polyline: pts };
