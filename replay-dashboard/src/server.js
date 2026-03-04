@@ -5,6 +5,8 @@ import fs from 'fs';
 import os from 'os';
 import { execFile } from 'child_process';
 
+const PYTHON_BIN = process.env.PYTHON || process.env.PYTHON_BIN || 'python3';
+
 const runCmd = (cmd, args = []) => new Promise((resolve, reject) => {
   execFile(cmd, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
     if (err) return reject(Object.assign(err, { stdout, stderr }));
@@ -30,7 +32,7 @@ app.post('/api/process-zip', express.raw({ type: 'application/octet-stream', lim
   await fs.promises.writeFile(inZip, req.body);
   try {
     // Run Python processor
-    await runCmd('python', [
+    await runCmd(PYTHON_BIN, [
       path.join(__dirname, '..', 'scripts', 'postprocess.py'),
       '--zip', inZip,
       '--gt-dir', path.join(__dirname, '..', 'Ground Truth Maps'),
