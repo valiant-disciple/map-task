@@ -21,8 +21,8 @@ export function getWsUrlForRole(role?: Role) {
     if (!WS_URL_MATCHER) throw new Error('VITE_WS_URL_MATCHER is missing');
     return WS_URL_MATCHER;
   }
-  if (!WS_URL) throw new Error('VITE_WS_URL is missing');
-  return WS_URL;
+  if (!BASE_WS) throw new Error('VITE_WS_URL is missing');
+  return BASE_WS;
 }
 
 export function getBackendHttpBase(role?: Role) {
