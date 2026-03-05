@@ -14,7 +14,7 @@ export default function Lobby() {
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<Role>('director');
   const [mapSet, setMapSetLocal] = useState<MapSet>(1);
-  const DURATION_SEC = 30; // Fixed internal duration
+  const DURATION_SEC = 210;
   const [randomize, setRandomize] = useState(true); // counterbalance map order
 
   // Two-step: demographics first, then session config
