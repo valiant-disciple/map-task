@@ -12,19 +12,19 @@ type StatusCallback = (status: 'connected' | 'disconnected' | 'connecting') => v
 // Resolve watch backend base from env and force HTTP(S) for REST polling.
 function resolveBase(role?: 'director' | 'matcher') {
     let base: string | undefined;
-    if (role === 'director') base = import.meta.env.VITE_WATCH_SERVER_URL_DIRECTOR;
-    else if (role === 'matcher') base = import.meta.env.VITE_WATCH_SERVER_URL_MATCHER;
+    if (role === 'director') base = import.meta.env.VITE_WATCH_SERVER_URL_DIRECTOR || import.meta.env.VITE_WATCH_SERVER_URL;
+    else if (role === 'matcher') base = import.meta.env.VITE_WATCH_SERVER_URL_MATCHER || import.meta.env.VITE_WATCH_SERVER_URL;
     else base = import.meta.env.VITE_WATCH_SERVER_URL;
 
     if (!base) {
-        throw new Error(`Watch backend URL missing for role ${role || 'unknown'}. Set VITE_WATCH_SERVER_URL_${role?.toUpperCase?.() || 'DIRECTOR/MATCHER'}.`);
+        throw new Error(`Watch backend URL missing for role ${role || 'unknown'}. Set VITE_WATCH_SERVER_URL or VITE_WATCH_SERVER_URL_${role?.toUpperCase?.() || 'DIRECTOR/MATCHER'}.`);
     }
     return base.replace('ws://', 'http://').replace('wss://', 'https://');
 }
 
 function resolveDeviceId(role?: 'director' | 'matcher') {
-    if (role === 'director') return import.meta.env.VITE_WATCH_DEVICE_ID_DIRECTOR;
-    if (role === 'matcher') return import.meta.env.VITE_WATCH_DEVICE_ID_MATCHER;
+    if (role === 'director') return import.meta.env.VITE_WATCH_DEVICE_ID_DIRECTOR || import.meta.env.VITE_WATCH_DEVICE_ID;
+    if (role === 'matcher') return import.meta.env.VITE_WATCH_DEVICE_ID_MATCHER || import.meta.env.VITE_WATCH_DEVICE_ID;
     return import.meta.env.VITE_WATCH_DEVICE_ID;
 }
 
