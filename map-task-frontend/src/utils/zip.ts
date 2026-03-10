@@ -95,14 +95,14 @@ function hrReadingsToCSV(readings: HRReading[]): string {
 }
 
 export async function downloadSessionZip(options: {
+  role: 'director' | 'matcher';
   sessionId: string;
   events: any[];
-  finalImageDataUrl?: string | null;
-  audioFiles?: Map<number, { blob: Blob; filename: string }[]>; // trialIndex -> list of audio files
-  hrData?: Map<number, { director: HRReading[]; matcher: HRReading[] }>; // trialIndex -> HR readings
-  baselineHR?: { director: number | null; matcher: number | null }; // Baseline averages
+  audioFiles?: Map<number, { blob: Blob; filename: string }[]>;
+  hrData?: Map<number, HRReading[]>;
+  baselineHR?: number | null;
 }) {
-  const { sessionId, events, audioFiles, hrData, baselineHR } = options;
+  const { role, sessionId, events, audioFiles, hrData, baselineHR } = options;
 
   const metas = events.filter(e => e.type === 'session_meta').map(e => e.payload || {});
   const metaDirector = metas.find((m: any) => m.role === 'director') || {};
@@ -142,13 +142,9 @@ export async function downloadSessionZip(options: {
       ?? tevents.find((e: any) => typeof e?.payload?.mapNumber === 'number')?.payload?.mapNumber
       ?? ((mapSet === 1 ? 0 : 8) + (ti - 1));
 
-    const tlxDirector = tevents.filter(e => e.type === 'tlx_submit' && e.role === 'director').map(e => e.payload);
-    const tlxMatcher = tevents.filter(e => e.type === 'tlx_submit' && e.role === 'matcher').map(e => e.payload);
+    const tlx = tevents.filter(e => e.type === 'tlx_submit' && e.role === role).map(e => e.payload);
 
-    const psmmDirector = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'director').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
-    const psmmMatcher = tevents.filter(e => e.type === 'psmm_submit' && e.role === 'matcher').flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
-
-    const modeTimeline = tevents.filter(e => e.type === 'mode_change' || e.type === 'action_toggle_mode').map((e: any) => ({ t: e.t, role: e.role, mode: e.payload?.mode || (e.payload?.isErase ? 'erase' : 'draw') }));
+    const psmm = tevents.filter(e => e.type === 'psmm_submit' && e.role === role).flatMap((e: any) => Array.isArray(e.payload) ? e.payload : [e.payload]);
     const rawStrokes = tevents
       .filter(e =>
         (e.type === 'draw_stroke' || e.type === 'draw_end') &&
@@ -184,10 +180,8 @@ export async function downloadSessionZip(options: {
     dir.file('events.json', JSON.stringify(tevents, null, 2));
     dir.file('strokes.json', JSON.stringify(strokes, null, 2));
     dir.file('cursor.json', JSON.stringify(cursor, null, 2));
-    dir.file('tlx_director.json', JSON.stringify(tlxDirector, null, 2));
-    dir.file('tlx_matcher.json', JSON.stringify(tlxMatcher, null, 2));
-    dir.file('psmm_director.json', JSON.stringify(psmmDirector, null, 2));
-    dir.file('psmm_matcher.json', JSON.stringify(psmmMatcher, null, 2));
+    dir.file(`tlx_${role}.json`, JSON.stringify(tlx, null, 2));
+    dir.file(`psmm_${role}.json`, JSON.stringify(psmm, null, 2));
     if (final) dir.file('final_image.png', dataUrlToBlob(final), { binary: true });
 
     // Save audio files for this trial
@@ -199,15 +193,12 @@ export async function downloadSessionZip(options: {
       });
     }
 
-    // Save HR CSV files for this trial
+    // Save HR CSV for this trial
     if (hrData && hrData.has(ti)) {
       const trialHR = hrData.get(ti)!;
-      const hrDir = dir.folder('hr')!;
-      if (trialHR.director.length > 0) {
-        hrDir.file('hr_director.csv', hrReadingsToCSV(trialHR.director));
-      }
-      if (trialHR.matcher.length > 0) {
-        hrDir.file('hr_matcher.csv', hrReadingsToCSV(trialHR.matcher));
+      if (trialHR.length > 0) {
+        const hrDir = dir.folder('hr')!;
+        hrDir.file(`hr_${role}.csv`, hrReadingsToCSV(trialHR));
       }
     }
 
@@ -218,36 +209,35 @@ export async function downloadSessionZip(options: {
         director: `map${mapNumber}g.gif`,
         matcher: `map${mapNumber}f.gif`
       },
-      tlx: { director: tlxDirector.length, matcher: tlxMatcher.length },
-      psmm: { director: psmmDirector.length, matcher: psmmMatcher.length },
+      tlx: { [role]: tlx.length },
+      psmm: { [role]: psmm.length },
       finalTimes
     });
   }
 
+  const meta = role === 'director' ? metaDirector : metaMatcher;
   const sessionJson = {
-    session: { id: metaDirector.sessionId || metaMatcher.sessionId || sessionId, createdAt: events[0]?.t || null },
-    participants: [
-      { role: 'director', participantId: metaDirector.participantId || null },
-      { role: 'matcher', participantId: metaMatcher.participantId || null }
-    ],
+    session: { id: meta.sessionId || sessionId, createdAt: events[0]?.t || null },
+    role,
+    participant: { role, participantId: meta.participantId || null },
     config: {
       mapSet,
       trialTotal,
       warmupCount,
-      durationSec: metaDirector.durationSec || metaMatcher.durationSec
+      durationSec: meta.durationSec || metaDirector.durationSec || metaMatcher.durationSec
     },
     trials: trialSummaries
   };
 
   zip.file('session/session.json', JSON.stringify(sessionJson, null, 2));
   zip.file('session/events.json', JSON.stringify(events, null, 2));
-  if (baselineHR && (baselineHR.director != null || baselineHR.matcher != null)) {
-    zip.file('session/hr_baseline.json', JSON.stringify(baselineHR, null, 2));
+  if (baselineHR != null) {
+    zip.file('session/hr_baseline.json', JSON.stringify({ [role]: baselineHR }, null, 2));
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `map_task_session_${sessionId}.zip`; a.click();
+  a.href = url; a.download = `map_task_${role}_${sessionId}.zip`; a.click();
   URL.revokeObjectURL(url);
 }

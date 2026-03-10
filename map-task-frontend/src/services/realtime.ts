@@ -1,5 +1,4 @@
 // Replaced Supabase with custom WebSocket implementation
-import type { EventRecord } from '../types';
 
 // Use dedicated session WebSocket URLs if provided, else fallback to VITE_WS_URL
 const BASE_WS = import.meta.env.VITE_SESSION_WS_URL || import.meta.env.VITE_WS_URL || '';
@@ -128,11 +127,6 @@ export async function signalFormSubmitted(channel: any, role: 'director' | 'matc
   channel.send({ type: 'broadcast', event: 'forms_submitted', payload: { role, at: Date.now() } });
 }
 
-export async function signalEvt(channel: any, rec: EventRecord, from: string) {
-  if (!channel) return;
-  channel.send({ type: 'broadcast', event: 'evt', payload: { rec, from } });
-}
-
 export async function signalTrialPrepare(channel: any, trialIndex: number, mapNumber: number, durationSec?: number) {
   if (!channel) return;
   channel.send({ type: 'broadcast', event: 'trial_prepare', payload: { trialIndex, mapNumber, durationSec, at: Date.now() } });
@@ -160,39 +154,3 @@ export async function signalSyncState(channel: any, state: SyncState) {
   channel.send({ type: 'broadcast', event: 'sync_state', payload: state });
 }
 
-export async function signalAudioChunk(
-  channel: any,
-  payload: {
-    trialIndex: number;
-    chunkIndex: number;
-    totalChunks: number;
-    data: string; // base64
-    filename: string;
-  }
-) {
-  if (!channel) return;
-  channel.send({ type: 'broadcast', event: 'audio_chunk', payload });
-}
-
-// HR Integration signals
-export async function signalBaselineStart(channel: any) {
-  if (!channel) return;
-  channel.send({ type: 'broadcast', event: 'baseline_start', payload: { at: Date.now() } });
-}
-
-export async function signalBaselineComplete(channel: any, role: 'director' | 'matcher', avgBpm: number) {
-  if (!channel) return;
-  channel.send({ type: 'broadcast', event: 'baseline_complete', payload: { role, avgBpm, at: Date.now() } });
-}
-
-export async function signalHRData(
-  channel: any,
-  payload: {
-    trialIndex: number;
-    role: 'director' | 'matcher';
-    data: string; // CSV data as base64 or raw string
-  }
-) {
-  if (!channel) return;
-  channel.send({ type: 'broadcast', event: 'hr_data', payload });
-}

@@ -7,7 +7,8 @@ import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalFormSubmitted, signalEvt, signalTrialEnd, signalSyncRequest, signalHRData, signalBaselineComplete, getBackendHttpBase } from '../services/realtime';
+import { joinSession, signalFormSubmitted, signalTrialEnd, signalSyncRequest } from '../services/realtime';
+import { downloadSessionZip } from '../utils/zip';
 import { audioRecorder } from '../services/audioRecorder';
 import { watchService, type HRReading } from '../services/watchService';
 import MicCheckWidget from '../components/MicCheckWidget';
@@ -22,11 +23,11 @@ function mapNumberFallback(mapSet: 1 | 2, trialIndex: number) { return (mapSet =
 export default function Matcher() {
   const loc = useLocation();
   const { state, setTrial, setSession, setMapSet, setDuration } = useSession();
-  const { addRaw } = useEventLog();
-  const matcherBackendUrl = getBackendHttpBase('matcher');
+  const { events, addRaw } = useEventLog();
 
   const [showTLX, setShowTLX] = useState(false);
   const [showPSMM, setShowPSMM] = useState(false);
+  const [formsDone, setFormsDone] = useState(false);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
 
   // Timer state
@@ -44,12 +45,13 @@ export default function Matcher() {
   // Audio state
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState<string>('');
+  const audioFilesRef = useRef<Map<number, { blob: Blob; filename: string }[]>>(new Map());
 
   // HR state
   const [baselineDone, setBaselineDone] = useState(false);
   const [baselineHR, setBaselineHR] = useState<number | null>(null);
-  const [waitingForBaseline, setWaitingForBaseline] = useState(false);
   const [micConfirmed, setMicConfirmed] = useState(false);
+  const hrDataRef = useRef<Map<number, HRReading[]>>(new Map());
 
   // Load devices
   const refreshDevices = async () => {
@@ -139,7 +141,6 @@ export default function Matcher() {
       payload: { ...(payload || {}), trialIndex: activeTrialRef.current, mapNumber: currentMapNum }
     };
     addRaw(rec);
-    if (state.participantId) signalEvt(channelRef.current, rec, state.participantId);
   };
 
   function computeRemainSec(): number {
@@ -202,7 +203,7 @@ export default function Matcher() {
 
     setStoppedRemainSec(finalRemain);
 
-    stopAndUpload();
+    stopAndStore();
 
     const currentIsDataTrial = activeTrialRef.current > state.warmupCount;
     if (currentIsDataTrial) {
@@ -256,26 +257,14 @@ export default function Matcher() {
             setStartAt(Number(payload.startAt));
             setStoppedRemainSec(null);
             endedRef.current = false;
+            // Ensure HR phase is correct when syncing mid-trial
+            watchService.setPhase('trial');
           }
-        }
-      });
-
-      channelRef.current?.on('broadcast', { event: 'evt' }, ({ payload }) => {
-        if (payload?.from && payload.from !== state.participantId) {
-          if (payload?.rec) addRaw(payload.rec as EventRecord);
         }
       });
 
       // Request full sync on channel join
       signalSyncRequest(channelRef.current);
-
-      // Listen for baseline start signal from Director
-      channelRef.current?.on('broadcast', { event: 'baseline_start' }, () => {
-        console.log('[Matcher] Received baseline_start signal');
-        setWaitingForBaseline(true);
-        // Auto-start baseline measurement if connected
-        // Widget will handle the actual measurement
-      });
     }
   }, [state.sessionId, state.participantId, state.mapSet]);
 
@@ -284,39 +273,24 @@ export default function Matcher() {
     return () => window.clearInterval(id);
   }, []);
 
-  // --- Shared: stop recording, upload audio & HR ---
+  // --- Stop recording, store HR & audio locally ---
 
-  function stopAndUpload() {
+  function stopAndStore() {
     watchService.setPhase('idle');
     const ti = activeTrialRef.current;
 
-    // Send HR data to Director
+    // Store HR data locally
     const trialHR = watchService.getReadingsForPhase('trial');
-    if (trialHR.length > 0) {
-      const csvData = trialHR.map(r => `${r.t},${r.bpm},${r.phase}`).join('|');
-      signalHRData(channelRef.current, { trialIndex: ti, role: 'matcher', data: csvData });
-      console.log(`[Matcher] Sent HR data for trial ${ti}: ${trialHR.length} readings`);
-    }
+    const existing = hrDataRef.current.get(ti) || [];
+    hrDataRef.current.set(ti, [...existing, ...trialHR]);
 
-    // Stop recording & upload audio via HTTP
+    // Stop recording & store audio locally
     if (audioRecorder.isRecording()) {
-      audioRecorder.stop().then(async (res) => {
-        const trialIndex = activeTrialRef.current;
-        const filename = `matcher_T${trialIndex}.webm`;
-        console.log(`[Matcher] Audio recorded (${res.blob.size} bytes), uploading ${filename}...`);
-        try {
-          const backendUrl = matcherBackendUrl;
-          const resp = await fetch(`${backendUrl}/api/audio/${state.sessionId}/${trialIndex}`, {
-            method: 'POST',
-            headers: { 'x-role': 'matcher', 'x-filename': filename },
-            body: res.blob,
-          });
-          const data = await resp.json();
-          console.log(`[Matcher] Audio uploaded: ${filename}`, data);
-          channelRef.current?.send({ type: 'broadcast', event: 'audio_ready', payload: { trialIndex, role: 'matcher', filename } });
-        } catch (err) {
-          console.error('[Matcher] Audio upload failed:', err);
-        }
+      audioRecorder.stop().then(res => {
+        const filename = `matcher_T${ti}.webm`;
+        const current = audioFilesRef.current.get(ti) || [];
+        current.push({ blob: res.blob, filename });
+        audioFilesRef.current.set(ti, current);
       }).catch(err => console.error('[Matcher] Rec Stop Error', err));
     }
   }
@@ -329,7 +303,7 @@ export default function Matcher() {
     const remainNow = computeRemainSec();
     setStoppedRemainSec(remainNow);
     log('trial_final_time', { remainSec: remainNow, elapsedSec: state.durationSec - remainNow, cause }, 'matcher');
-    stopAndUpload();
+    stopAndStore();
     await signalTrialEnd(channelRef.current);
     if (isDataTrial) setShowTLX(true);
   }
@@ -338,6 +312,7 @@ export default function Matcher() {
   async function onPSMMSubmit(rows: any[]) {
     log('psmm_submit', rows, 'matcher');
     setShowPSMM(false);
+    setFormsDone(true);
     await signalFormSubmitted(channelRef.current, 'matcher');
   }
 
@@ -350,10 +325,22 @@ export default function Matcher() {
   const onBaselineComplete = React.useCallback((avgBpm: number) => {
     setBaselineHR(avgBpm);
     setBaselineDone(true);
-    setWaitingForBaseline(false);
     log('baseline_hr', { avgBpm, role: 'matcher' }, 'matcher');
-    signalBaselineComplete(channelRef.current, 'matcher', avgBpm);
   }, []);
+
+  const total = state.trialTotal ?? 8;
+  const allTrialsDone = activeTrialRef.current >= total && isDataTrial && formsDone;
+
+  async function downloadZip() {
+    await downloadSessionZip({
+      role: 'matcher',
+      sessionId: state.sessionId!,
+      events: events.filter(e => !e.role || e.role === 'matcher'),
+      audioFiles: audioFilesRef.current,
+      hrData: hrDataRef.current,
+      baselineHR: baselineHR,
+    });
+  }
 
   return (
     <div style={{ display: 'flex', gap: 16 }}>
@@ -371,11 +358,6 @@ export default function Matcher() {
           onSelectMic={setSelectedMicId}
           onRefreshDevices={refreshDevices}
         />
-        {waitingForBaseline && !baselineDone && (
-          <div style={{ marginTop: 8, padding: 8, backgroundColor: '#fff3e0', borderRadius: 4, fontSize: 12 }}>
-            ⏳ Director started baseline. Please measure yours.
-          </div>
-        )}
       </div>
 
       {/* Main Content */}
@@ -415,6 +397,11 @@ export default function Matcher() {
               }}
               onCursorMove={(x, y) => setCursorPos({ x, y })}
             />
+            {allTrialsDone && (
+              <div className="row right" style={{ marginTop: 8 }}>
+                <button onClick={downloadZip}>Download ZIP</button>
+              </div>
+            )}
           </div>
         </div>
       </div>

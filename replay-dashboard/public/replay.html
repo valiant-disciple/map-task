@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session Replay</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0; padding: 20px 28px; background: #fafafa; color: #1a1a1a;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 16px; }
+
+    /* Status bar */
+    .status-bar {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: 8px 14px; margin-bottom: 16px; font-size: .85rem; color: #475569;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .status-bar .dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot-idle { background: #94a3b8; }
+    .dot-working { background: #f59e0b; animation: pulse 1s infinite; }
+    .dot-done { background: #22c55e; }
+    .dot-error { background: #ef4444; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+    /* Trial selector */
+    .trial-bar {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    }
+    .trial-bar label { font-weight: 500; font-size: .9rem; }
+    .trial-bar select {
+      padding: 5px 10px; border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: .9rem; background: #fff;
+    }
+
+    /* Main layout */
+    .main-grid {
+      display: grid; grid-template-columns: auto 1fr; gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 16px; margin-bottom: 14px;
+    }
+    .card h3 {
+      font-size: .85rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; margin: 0 0 10px;
+    }
+
+    /* Stroke canvas */
+    #strokeCanvas {
+      background: #fff; border: 1px solid #d1d5db; border-radius: 6px;
+      max-height: 500px; width: auto; height: auto; display: block;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex; align-items: center; gap: 10px; margin-top: 10px;
+    }
+    .controls button {
+      padding: 6px 16px; border: none; border-radius: 6px;
+      font-size: .85rem; font-weight: 500; cursor: pointer; transition: background .12s;
+    }
+    #playBtn { background: #3b82f6; color: #fff; }
+    #playBtn:hover { background: #2563eb; }
+    #playBtn.playing { background: #f59e0b; }
+    #playBtn.playing:hover { background: #d97706; }
+    .controls input[type="range"] { flex: 1; accent-color: #3b82f6; }
+    .time-label { font-size: .8rem; color: #64748b; min-width: 100px; text-align: right; }
+
+    /* HR plot */
+    #hrCanvas {
+      width: 100%; height: auto; border: 1px solid #d1d5db;
+      border-radius: 6px; background: #fff; display: block;
+    }
+    .legend {
+      display: flex; gap: 16px; margin-top: 6px; font-size: .8rem; color: #64748b;
+    }
+    .legend span::before {
+      content: ''; display: inline-block; width: 14px; height: 3px;
+      margin-right: 4px; vertical-align: middle; border-radius: 2px;
+    }
+    .legend .matcher::before { background: #3b82f6; }
+    .legend .director::before { background: #ef4444; }
+
+    /* Stat tables */
+    .stat-table {
+      width: 100%; border-collapse: collapse; font-size: .82rem;
+    }
+    .stat-table th {
+      text-align: left; padding: 4px 8px; color: #64748b; font-weight: 500;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .stat-table td {
+      padding: 4px 8px; border-bottom: 1px solid #f1f5f9;
+    }
+    .stat-table td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+    .transcript-list { list-style: none; padding: 0; margin: 0; }
+    .transcript-list li {
+      padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: .84rem;
+    }
+    .transcript-list .file { color: #64748b; font-size: .78rem; }
+    .transcript-list .conf { color: #94a3b8; font-size: .75rem; margin-left: 6px; }
+
+    .gaze-info { font-size: .78rem; color: #64748b; margin-top: 6px; }
+    .gaze-info span { margin-right: 12px; }
+    .gaze-info .dir { color: #ef4444; }
+    .gaze-info .mat { color: #3b82f6; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<h1>Session Replay Dashboard</h1>
+
+<div class="card" id="uploadCard" style="margin-bottom:16px">
+  <h3>Session Data</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;align-items:end">
+    <div>
+      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Director ZIP</label>
+      <input type="file" id="directorZipInput" accept=".zip">
+    </div>
+    <div>
+      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Matcher ZIP</label>
+      <input type="file" id="matcherZipInput" accept=".zip">
+    </div>
+    <div>
+      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Director Eye Tracker (Aurora CSV, optional)</label>
+      <input type="file" id="eyeDirectorInput" accept=".csv">
+    </div>
+    <div>
+      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Matcher Eye Tracker (SmartEye .log, optional)</label>
+      <input type="file" id="eyeMatcherInput" accept=".log,.txt,.csv">
+    </div>
+  </div>
+  <div style="margin-top:14px;display:flex;align-items:center;gap:12px">
+    <button id="processAllBtn" style="background:#3b82f6;color:#fff;border:none;padding:8px 24px;border-radius:6px;font-size:.9rem;font-weight:500;cursor:pointer" disabled>Process All</button>
+    <span id="uploadHint" style="font-size:.82rem;color:#94a3b8">Upload both ZIPs to begin</span>
+  </div>
+</div>
+
+<div class="status-bar" id="statusBar">
+  <span class="dot dot-idle" id="statusDot"></span>
+  <span id="statusText">Ready &mdash; upload director and matcher ZIPs to begin</span>
+</div>
+
+<div class="trial-bar hidden" id="trialBar">
+  <label for="trialSelect">Trial:</label>
+  <select id="trialSelect"></select>
+  <span id="trialMeta" style="font-size:.82rem;color:#64748b"></span>
+</div>
+
+<div class="main-grid hidden" id="mainGrid">
+  <!-- Left column: canvas + controls -->
+  <div class="left-col">
+    <div class="card">
+      <h3>Stroke Replay</h3>
+      <canvas id="strokeCanvas" width="651" height="900"></canvas>
+      <div class="gaze-info" id="gazeInfo"></div>
+      <div class="controls">
+        <button id="playBtn">Play</button>
+        <input type="range" id="scrubber" min="0" max="1000" value="0" step="1">
+        <span class="time-label" id="timeLabel">0:00 / 0:00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right column: HR plot + stats -->
+  <div class="right-col">
+    <div class="card">
+      <h3>Heart Rate</h3>
+      <canvas id="hrCanvas" width="700" height="260"></canvas>
+      <div class="legend">
+        <span class="matcher">Matcher</span>
+        <span class="director">Director</span>
+      </div>
+    </div>
+
+    <div class="card" id="rqaCard">
+      <h3>HRV &amp; RQA</h3>
+      <div id="rqaContent"></div>
+    </div>
+
+    <div class="card" id="metricsCard">
+      <h3>Map Metrics</h3>
+      <div id="metricsContent"></div>
+    </div>
+
+    <div class="card" id="prosodyCard">
+      <h3>Prosody</h3>
+      <div id="prosodyContent"></div>
+    </div>
+
+    <div class="card" id="speechCard">
+      <h3>Transcripts</h3>
+      <div id="speechContent"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const CANVAS_W = 651, CANVAS_H = 900;
+  const COLOR_MATCHER = '#3b82f6';
+  const COLOR_DIRECTOR = '#ef4444';
+
+  // ── DOM refs ──
+  const directorZipInput = document.getElementById('directorZipInput');
+  const matcherZipInput  = document.getElementById('matcherZipInput');
+  const processAllBtn    = document.getElementById('processAllBtn');
+  const uploadHint       = document.getElementById('uploadHint');
+  const statusDot   = document.getElementById('statusDot');
+  const statusText  = document.getElementById('statusText');
+  const trialBar    = document.getElementById('trialBar');
+  const trialSelect = document.getElementById('trialSelect');
+  const trialMeta   = document.getElementById('trialMeta');
+  const mainGrid    = document.getElementById('mainGrid');
+  const strokeCanvas = document.getElementById('strokeCanvas');
+  const strokeCtx   = strokeCanvas.getContext('2d');
+  const hrCanvas    = document.getElementById('hrCanvas');
+  const hrCtx       = hrCanvas.getContext('2d');
+  const playBtn     = document.getElementById('playBtn');
+  const scrubber    = document.getElementById('scrubber');
+  const timeLabel   = document.getElementById('timeLabel');
+  const gazeInfoEl  = document.getElementById('gazeInfo');
+  const eyeDirectorInput = document.getElementById('eyeDirectorInput');
+  const eyeMatcherInput  = document.getElementById('eyeMatcherInput');
+
+  // ── State ──
+  const data = {
+    trials: {},       // trialIdx → { strokes, hrMatcher, hrDirector, mapNumber, t0, duration }
+    metrics: {},      // trialIdx → row
+    hrStats: {},      // trialIdx → { matcher: row, director: row, cross: row }
+    prosody: {},      // trialIdx → [rows]
+    speech: {},       // trialIdx → [rows]
+    baseline: null,   // { matcher, director }
+    gazeDirector: [], // [{t, gaze_x, gaze_y, aoi, ...}] absolute unix ms timestamps
+    gazeMatcher: [],  // same
+  };
+
+  let currentTrial = null;
+  let playing = false;
+  let playhead = 0;       // relative ms
+  let duration = 0;       // ms
+  let animFrame = null;
+  let lastFrameTime = null;
+  let drawnStrokeIdx = -1; // for incremental drawing
+
+  // ── CSV parser ──
+  function parseCSVLine(line) {
+    const out = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) {
+        if (c === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') { cur += '"'; i++; }
+          else inQ = false;
+        } else cur += c;
+      } else {
+        if (c === '"') inQ = true;
+        else if (c === ',') { out.push(cur); cur = ''; }
+        else cur += c;
+      }
+    }
+    out.push(cur);
+    return out;
+  }
+
+  function parseCSV(text) {
+    const lines = text.trim().split('\n').filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const hdrs = parseCSVLine(lines[0]);
+    return lines.slice(1).map(l => {
+      const vals = parseCSVLine(l);
+      const obj = {};
+      hdrs.forEach((h, i) => { obj[h.trim()] = (vals[i] || '').trim(); });
+      return obj;
+    });
+  }
+
+  // ── Status helpers ──
+  function setStatus(msg, level) {
+    statusText.textContent = msg;
+    statusDot.className = 'dot dot-' + level;
+  }
+
+  // ── Rescale strokes from 1024×1024 → 651×900 if needed ──
+  function rescaleStrokes(strokes) {
+    let maxX = 0, maxY = 0;
+    for (const s of strokes) {
+      for (const p of s.points || []) {
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+    }
+    const srcW = maxX > CANVAS_W ? 1024 : CANVAS_W;
+    const srcH = maxY > CANVAS_H ? 1024 : CANVAS_H;
+    if (srcW === CANVAS_W && srcH === CANVAS_H) return strokes;
+    const sx = CANVAS_W / srcW, sy = CANVAS_H / srcH;
+    return strokes.map(s => ({
+      ...s,
+      points: (s.points || []).map(p => ({ ...p, x: p.x * sx, y: p.y * sy })),
+      width: s.width ? s.width * Math.min(sx, sy) : s.width
+    }));
+  }
+
+  // ── Extract strokes from events.json (mirrors server parse_events) ──
+  function strokesFromEvents(events) {
+    const out = [];
+    events.forEach((e, idx) => {
+      if (e.type !== 'draw_stroke' || e.role !== 'matcher') return;
+      const pay = e.payload || {};
+      let pts = pay.polyline || pay.points || [];
+      pts = pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+      if (pts.length < 2) return;
+      const mode = pay.mode || 'draw';
+      if (mode !== 'draw' && mode !== 'erase') return;
+      out.push({ points: pts, mode, width: pay.width, t: e.t, strokeIndex: idx });
+    });
+    return out;
+  }
+
+  function mapNumberFromEvents(events) {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const mn = events[i]?.payload?.mapNumber;
+      if (typeof mn === 'number') return mn;
+    }
+    return null;
+  }
+
+  // ── Parse raw HR CSV from original ZIP (columns: t_unix_ms, ?, bpm, [phase]) ──
+  function parseRawHR(text) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(',');
+      if (parts.length < 3) continue;
+      const t = parseInt(parts[0], 10);
+      const bpm = parseFloat(parts[2]);
+      if (isNaN(t) || isNaN(bpm)) continue;
+      out.push({ t, bpm });
+    }
+    return out;
+  }
+
+  // ── Merge two per-role ZIPs into a combined ZIP ──
+  async function mergeRoleZips(directorBuf, matcherBuf) {
+    const dirZip = await JSZip.loadAsync(directorBuf);
+    const matZip = await JSZip.loadAsync(matcherBuf);
+    const merged = new JSZip();
+
+    // Merge session.json
+    let dirSession = {}, matSession = {};
+    try { dirSession = JSON.parse(await dirZip.file('session/session.json').async('text')); } catch (_) {}
+    try { matSession = JSON.parse(await matZip.file('session/session.json').async('text')); } catch (_) {}
+    const sessionJson = {
+      session: dirSession.session || matSession.session || {},
+      participants: [
+        dirSession.participant || { role: 'director' },
+        matSession.participant || { role: 'matcher' }
+      ],
+      config: dirSession.config || matSession.config || {},
+      trials: dirSession.trials || matSession.trials || []
+    };
+    merged.file('session/session.json', JSON.stringify(sessionJson, null, 2));
+
+    // Merge hr_baseline.json
+    let dirBaseline = {}, matBaseline = {};
+    try { dirBaseline = JSON.parse(await dirZip.file('session/hr_baseline.json').async('text')); } catch (_) {}
+    try { matBaseline = JSON.parse(await matZip.file('session/hr_baseline.json').async('text')); } catch (_) {}
+    const baseline = { ...dirBaseline, ...matBaseline };
+    if (Object.keys(baseline).length) {
+      merged.file('session/hr_baseline.json', JSON.stringify(baseline, null, 2));
+    }
+
+    // Find all trial dirs from both ZIPs
+    const trialDirs = new Set();
+    dirZip.forEach(p => { const m = p.match(/^trials\/(T\d+)\//); if (m) trialDirs.add(m[1]); });
+    matZip.forEach(p => { const m = p.match(/^trials\/(T\d+)\//); if (m) trialDirs.add(m[1]); });
+
+    for (const tdir of [...trialDirs].sort()) {
+      const prefix = `trials/${tdir}/`;
+
+      // Merge events.json (concat both, sort by timestamp)
+      let dirEvents = [], matEvents = [];
+      try { dirEvents = JSON.parse(await dirZip.file(prefix + 'events.json').async('text')); } catch (_) {}
+      try { matEvents = JSON.parse(await matZip.file(prefix + 'events.json').async('text')); } catch (_) {}
+      const allEvents = [...dirEvents, ...matEvents].sort((a, b) => (a.t || 0) - (b.t || 0));
+      merged.file(prefix + 'events.json', JSON.stringify(allEvents, null, 2));
+
+      // Copy strokes.json from matcher (matcher draws)
+      try {
+        const f = matZip.file(prefix + 'strokes.json');
+        if (f) merged.file(prefix + 'strokes.json', await f.async('uint8array'));
+      } catch (_) {}
+
+      // Copy cursor.json from matcher
+      try {
+        const f = matZip.file(prefix + 'cursor.json');
+        if (f) merged.file(prefix + 'cursor.json', await f.async('uint8array'));
+      } catch (_) {}
+
+      // Copy final_image.png from matcher
+      try {
+        const f = matZip.file(prefix + 'final_image.png');
+        if (f) merged.file(prefix + 'final_image.png', await f.async('uint8array'));
+      } catch (_) {}
+
+      // Copy HR files from each role
+      for (const [zip, role] of [[dirZip, 'director'], [matZip, 'matcher']]) {
+        try {
+          const f = zip.file(prefix + `hr/hr_${role}.csv`);
+          if (f) merged.file(prefix + `hr/hr_${role}.csv`, await f.async('uint8array'));
+        } catch (_) {}
+      }
+
+      // Copy audio files from each role
+      for (const [zip, role] of [[dirZip, 'director'], [matZip, 'matcher']]) {
+        zip.forEach((relPath, fileObj) => {
+          if (relPath.startsWith(prefix + 'audio/') && relPath.includes(role)) {
+            merged.file(relPath, fileObj.async('uint8array'));
+          }
+        });
+      }
+
+      // Copy TLX and PSMM from each role
+      for (const [zip, role] of [[dirZip, 'director'], [matZip, 'matcher']]) {
+        for (const formFile of [`tlx_${role}.json`, `psmm_${role}.json`]) {
+          try {
+            const f = zip.file(prefix + formFile);
+            if (f) merged.file(prefix + formFile, await f.async('uint8array'));
+          } catch (_) {}
+        }
+      }
+    }
+
+    // Merge session/events.json (all events from both roles)
+    let dirAllEvents = [], matAllEvents = [];
+    try { dirAllEvents = JSON.parse(await dirZip.file('session/events.json').async('text')); } catch (_) {}
+    try { matAllEvents = JSON.parse(await matZip.file('session/events.json').async('text')); } catch (_) {}
+    const mergedAllEvents = [...dirAllEvents, ...matAllEvents].sort((a, b) => (a.t || 0) - (b.t || 0));
+    merged.file('session/events.json', JSON.stringify(mergedAllEvents, null, 2));
+
+    return merged.generateAsync({ type: 'arraybuffer' });
+  }
+
+  // ── Upload + process ──
+  async function handleProcessAll() {
+    const dirFile = directorZipInput.files[0];
+    const matFile = matcherZipInput.files[0];
+    if (!dirFile || !matFile) {
+      setStatus('Please select both director and matcher ZIPs', 'error');
+      return;
+    }
+
+    processAllBtn.disabled = true;
+
+    // Read files
+    setStatus('Reading ZIPs…', 'working');
+    const dirBuf = await dirFile.arrayBuffer();
+    const matBuf = await matFile.arrayBuffer();
+
+    // Merge
+    setStatus('Merging director + matcher ZIPs…', 'working');
+    let mergedBuf;
+    try {
+      mergedBuf = await mergeRoleZips(dirBuf, matBuf);
+    } catch (e) {
+      setStatus('Merge failed: ' + e.message, 'error');
+      processAllBtn.disabled = false;
+      return;
+    }
+
+    // Parse merged ZIP client-side for replay
+    setStatus('Parsing session data…', 'working');
+    await parseOriginalZip(mergedBuf);
+
+    // Upload merged ZIP to server for postprocessing
+    setStatus('Uploading to server for processing…', 'working');
+    let processedBuf;
+    try {
+      const resp = await fetch('/api/process-zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: mergedBuf
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(errText || resp.statusText);
+      }
+      processedBuf = await resp.arrayBuffer();
+    } catch (e) {
+      setStatus('Server error: ' + e.message, 'error');
+      processAllBtn.disabled = false;
+      return;
+    }
+
+    // Auto-download processed ZIP
+    triggerDownload(processedBuf, 'postprocess_output.zip');
+
+    // Parse processed ZIP
+    setStatus('Parsing processed output…', 'working');
+    await parseProcessedZip(processedBuf);
+
+    // Build UI
+    buildTrialTimelines();
+    populateTrialSelector();
+
+    // Process eye tracker files if provided
+    const eyeDirFile = eyeDirectorInput.files[0];
+    const eyeMatFile = eyeMatcherInput.files[0];
+    if (eyeDirFile || eyeMatFile) {
+      try {
+        if (eyeDirFile) {
+          setStatus('Processing director eye data…', 'working');
+          data.gazeDirector = await processEyeFile(eyeDirFile, 'aurora', 'director');
+          data.gazeDirector.sort((a, b) => a.t - b.t);
+        }
+        if (eyeMatFile) {
+          setStatus('Processing matcher eye data…', 'working');
+          data.gazeMatcher = await processEyeFile(eyeMatFile, 'smarteye', 'matcher');
+          data.gazeMatcher.sort((a, b) => a.t - b.t);
+        }
+      } catch (e) {
+        setStatus('Eye processing error: ' + e.message + ' (session data OK)', 'error');
+        processAllBtn.disabled = false;
+        return;
+      }
+      renderFrame();
+    }
+
+    setStatus(`Done — ${Object.keys(data.trials).length} trials loaded`, 'done');
+    processAllBtn.disabled = false;
+  }
+
+  function triggerDownload(buf, filename) {
+    const blob = new Blob([buf], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Parse ORIGINAL ZIP ──
+  async function parseOriginalZip(buf) {
+    const zip = await JSZip.loadAsync(buf);
+    // Baseline HR
+    try {
+      const blText = await zip.file('session/hr_baseline.json').async('text');
+      data.baseline = JSON.parse(blText);
+    } catch (_) { data.baseline = null; }
+
+    // Find trial dirs
+    const trialDirs = new Set();
+    zip.forEach((path) => {
+      const m = path.match(/^trials\/(T\d+)\//);
+      if (m) trialDirs.add(m[1]);
+    });
+
+    for (const tdir of [...trialDirs].sort()) {
+      const idx = parseInt(tdir.replace('T', ''), 10);
+      if (isNaN(idx)) continue;
+
+      let events = [];
+      try {
+        const txt = await zip.file(`trials/${tdir}/events.json`).async('text');
+        events = JSON.parse(txt);
+      } catch (_) {}
+
+      const mapNumber = mapNumberFromEvents(events);
+
+      // Strokes: prefer events-based, fall back to strokes.json
+      let strokes = strokesFromEvents(events);
+      if (!strokes.length) {
+        try {
+          const txt = await zip.file(`trials/${tdir}/strokes.json`).async('text');
+          const raw = JSON.parse(txt);
+          if (Array.isArray(raw)) {
+            strokes = raw.map((s, i) => {
+              let pts = s.polyline || s.points || [];
+              pts = pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+              const mode = s.mode || 'draw';
+              return { points: pts, mode, width: s.width, t: s.t, strokeIndex: i };
+            }).filter(s => s.points.length >= 2 && (s.mode === 'draw' || s.mode === 'erase'));
+          }
+        } catch (_) {}
+      }
+
+      strokes = rescaleStrokes(strokes);
+      strokes.sort((a, b) => (a.t || 0) - (b.t || 0));
+
+      // HR
+      let hrMatcher = [], hrDirector = [];
+      try {
+        const t = await zip.file(`trials/${tdir}/hr/hr_matcher.csv`).async('text');
+        hrMatcher = parseRawHR(t);
+      } catch (_) {}
+      try {
+        const t = await zip.file(`trials/${tdir}/hr/hr_director.csv`).async('text');
+        hrDirector = parseRawHR(t);
+      } catch (_) {}
+
+      data.trials[idx] = { strokes, hrMatcher, hrDirector, mapNumber, t0: 0, duration: 0 };
+    }
+  }
+
+  // ── Parse PROCESSED ZIP ──
+  async function parseProcessedZip(buf) {
+    const zip = await JSZip.loadAsync(buf);
+
+    async function loadCSV(name) {
+      try {
+        const f = zip.file(name);
+        if (!f) return [];
+        return parseCSV(await f.async('text'));
+      } catch (_) { return []; }
+    }
+
+    const metrics = await loadCSV('metrics.csv');
+    metrics.forEach(r => { data.metrics[+r.trial] = r; });
+
+    const hrStats = await loadCSV('hr_stats.csv');
+    hrStats.forEach(r => {
+      const t = +r.trial;
+      if (!data.hrStats[t]) data.hrStats[t] = {};
+      data.hrStats[t][r.role] = r;
+    });
+
+    const prosody = await loadCSV('prosody.csv');
+    prosody.forEach(r => {
+      const t = +r.trial;
+      if (!data.prosody[t]) data.prosody[t] = [];
+      data.prosody[t].push(r);
+    });
+
+    const speech = await loadCSV('speech.csv');
+    speech.forEach(r => {
+      const t = +r.trial;
+      if (!data.speech[t]) data.speech[t] = [];
+      data.speech[t].push(r);
+    });
+  }
+
+  // ── Compute t0 and duration for each trial ──
+  function buildTrialTimelines() {
+    for (const [idx, trial] of Object.entries(data.trials)) {
+      const times = [];
+      for (const s of trial.strokes) {
+        if (typeof s.t === 'number' && s.t > 0) times.push(s.t);
+        for (const p of s.points || []) {
+          if (typeof p.t === 'number' && p.t > 0) times.push(p.t);
+        }
+      }
+      for (const h of trial.hrMatcher) times.push(h.t);
+      for (const h of trial.hrDirector) times.push(h.t);
+
+      if (!times.length) { trial.t0 = 0; trial.duration = 0; continue; }
+      trial.t0 = Math.min(...times);
+      trial.duration = Math.max(...times) - trial.t0;
+    }
+  }
+
+  // ── Trial selector ──
+  function populateTrialSelector() {
+    trialSelect.innerHTML = '';
+    const indices = Object.keys(data.trials).map(Number).sort((a, b) => a - b);
+    if (!indices.length) { setStatus('No trials found in ZIP', 'error'); return; }
+
+    for (const idx of indices) {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      const mn = data.trials[idx].mapNumber;
+      opt.textContent = `Trial ${idx}` + (mn != null ? ` (Map ${mn})` : '');
+      trialSelect.appendChild(opt);
+    }
+
+    trialBar.classList.remove('hidden');
+    mainGrid.classList.remove('hidden');
+    selectTrial(indices[0]);
+  }
+
+  function selectTrial(idx) {
+    pause();
+    currentTrial = +idx;
+    const trial = data.trials[currentTrial];
+    if (!trial) return;
+
+    duration = trial.duration || 1;
+    playhead = 0;
+    drawnStrokeIdx = -1;
+    scrubber.max = Math.ceil(duration);
+    scrubber.value = 0;
+
+    const mn = trial.mapNumber;
+    trialMeta.textContent = [
+      mn != null ? `Map #${mn}` : '',
+      `${trial.strokes.length} strokes`,
+      `${trial.hrMatcher.length + trial.hrDirector.length} HR samples`,
+      formatMs(duration)
+    ].filter(Boolean).join('  ·  ');
+
+    bgImage = null;
+    if (mn != null) loadBgMap(mn);
+
+    clearStrokeCanvas();
+    renderFrame();
+    renderStats();
+  }
+
+  // ── Background map image ──
+  let bgImage = null;
+  function loadBgMap(mapNumber) {
+    const img = new Image();
+    img.onload = () => { bgImage = img; clearStrokeCanvas(); renderFrame(); };
+    img.onerror = () => { bgImage = null; };
+    img.src = `/maps/map${mapNumber}g.gif`;
+  }
+
+  // ── Stroke canvas ──
+  function clearStrokeCanvas() {
+    strokeCtx.fillStyle = '#fff';
+    strokeCtx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    if (bgImage) {
+      strokeCtx.globalAlpha = 0.3;
+      strokeCtx.drawImage(bgImage, 0, 0, CANVAS_W, CANVAS_H);
+      strokeCtx.globalAlpha = 1.0;
+    }
+    drawnStrokeIdx = -1;
+  }
+
+  function drawStroke(s) {
+    const pts = s.points;
+    if (pts.length < 2) return;
+    strokeCtx.beginPath();
+    strokeCtx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) strokeCtx.lineTo(pts[i].x, pts[i].y);
+    strokeCtx.lineCap = 'round';
+    strokeCtx.lineJoin = 'round';
+    strokeCtx.lineWidth = s.width || (s.mode === 'erase' ? 20 : 3);
+    strokeCtx.strokeStyle = s.mode === 'erase' ? '#ffffff' : '#1a1a1a';
+    strokeCtx.stroke();
+  }
+
+  function drawStrokesUpTo(relMs) {
+    const trial = data.trials[currentTrial];
+    if (!trial) return;
+    const absT = trial.t0 + relMs;
+
+    // Find the target stroke index
+    let targetIdx = -1;
+    for (let i = 0; i < trial.strokes.length; i++) {
+      if ((trial.strokes[i].t || 0) <= absT) targetIdx = i;
+      else break;
+    }
+
+    if (targetIdx < drawnStrokeIdx) {
+      // Scrubbed backward — full redraw
+      clearStrokeCanvas();
+      for (let i = 0; i <= targetIdx; i++) drawStroke(trial.strokes[i]);
+      drawnStrokeIdx = targetIdx;
+    } else if (targetIdx > drawnStrokeIdx) {
+      // Incremental forward draw
+      for (let i = drawnStrokeIdx + 1; i <= targetIdx; i++) drawStroke(trial.strokes[i]);
+      drawnStrokeIdx = targetIdx;
+    }
+  }
+
+  // ── HR plot ──
+  function drawHRPlot(relMs) {
+    const trial = data.trials[currentTrial];
+    if (!trial) return;
+
+    const w = hrCanvas.width, h = hrCanvas.height;
+    const pad = { top: 20, right: 16, bottom: 30, left: 50 };
+    const plotW = w - pad.left - pad.right;
+    const plotH = h - pad.top - pad.bottom;
+
+    hrCtx.clearRect(0, 0, w, h);
+    hrCtx.fillStyle = '#fff';
+    hrCtx.fillRect(0, 0, w, h);
+
+    const allBpms = [
+      ...trial.hrMatcher.map(d => d.bpm),
+      ...trial.hrDirector.map(d => d.bpm)
+    ].filter(v => isFinite(v));
+
+    if (!allBpms.length) {
+      hrCtx.fillStyle = '#94a3b8';
+      hrCtx.font = '13px system-ui';
+      hrCtx.textAlign = 'center';
+      hrCtx.fillText('No HR data for this trial', w / 2, h / 2);
+      return;
+    }
+
+    const bpmMin = Math.floor(Math.min(...allBpms) / 5) * 5 - 5;
+    const bpmMax = Math.ceil(Math.max(...allBpms) / 5) * 5 + 5;
+    const tMax = trial.duration || 1;
+
+    const xScale = v => pad.left + (v / tMax) * plotW;
+    const yScale = v => pad.top + plotH - ((v - bpmMin) / (bpmMax - bpmMin)) * plotH;
+
+    // Grid lines
+    hrCtx.strokeStyle = '#f1f5f9';
+    hrCtx.lineWidth = 1;
+    for (let bpm = Math.ceil(bpmMin / 10) * 10; bpm <= bpmMax; bpm += 10) {
+      const y = yScale(bpm);
+      hrCtx.beginPath(); hrCtx.moveTo(pad.left, y); hrCtx.lineTo(w - pad.right, y); hrCtx.stroke();
+      hrCtx.fillStyle = '#94a3b8'; hrCtx.font = '11px system-ui'; hrCtx.textAlign = 'right';
+      hrCtx.fillText(bpm, pad.left - 6, y + 4);
+    }
+    // Time labels
+    const stepSec = tMax > 120000 ? 60 : tMax > 30000 ? 15 : 5;
+    hrCtx.textAlign = 'center';
+    for (let s = 0; s <= tMax / 1000; s += stepSec) {
+      const x = xScale(s * 1000);
+      hrCtx.beginPath(); hrCtx.moveTo(x, pad.top); hrCtx.lineTo(x, h - pad.bottom); hrCtx.stroke();
+      hrCtx.fillStyle = '#94a3b8'; hrCtx.font = '11px system-ui';
+      hrCtx.fillText(s + 's', x, h - pad.bottom + 16);
+    }
+
+    // Axis labels
+    hrCtx.save();
+    hrCtx.fillStyle = '#64748b'; hrCtx.font = '11px system-ui';
+    hrCtx.translate(14, pad.top + plotH / 2);
+    hrCtx.rotate(-Math.PI / 2);
+    hrCtx.textAlign = 'center';
+    hrCtx.fillText('BPM', 0, 0);
+    hrCtx.restore();
+
+    // Draw lines
+    function drawLine(samples, color) {
+      if (samples.length < 2) return;
+      hrCtx.beginPath();
+      hrCtx.strokeStyle = color;
+      hrCtx.lineWidth = 1.8;
+      hrCtx.lineJoin = 'round';
+      let started = false;
+      for (const s of samples) {
+        const x = xScale(s.t - trial.t0);
+        const y = yScale(s.bpm);
+        if (!started) { hrCtx.moveTo(x, y); started = true; }
+        else hrCtx.lineTo(x, y);
+      }
+      hrCtx.stroke();
+    }
+    drawLine(trial.hrMatcher, COLOR_MATCHER);
+    drawLine(trial.hrDirector, COLOR_DIRECTOR);
+
+    // Playhead
+    const px = xScale(relMs);
+    hrCtx.strokeStyle = '#1a1a1a';
+    hrCtx.lineWidth = 1.5;
+    hrCtx.setLineDash([4, 3]);
+    hrCtx.beginPath();
+    hrCtx.moveTo(px, pad.top);
+    hrCtx.lineTo(px, h - pad.bottom);
+    hrCtx.stroke();
+    hrCtx.setLineDash([]);
+  }
+
+  // ── Stats panels ──
+  function renderStats() {
+    renderMetrics();
+    renderRQA();
+    renderProsody();
+    renderSpeech();
+  }
+
+  function renderMetrics() {
+    const el = document.getElementById('metricsContent');
+    const row = data.metrics[currentTrial];
+    if (!row) { el.innerHTML = '<p style="color:#94a3b8;font-size:.84rem">No metrics available</p>'; return; }
+    const fields = [
+      ['IoU', 'iou'], ['F1 / Dice', 'f1'], ['Precision', 'precision'], ['Recall', 'recall'],
+      ['SSIM', 'ssim'], ['Hausdorff', 'hausdorff'], ['Chamfer', 'chamfer'],
+      ['Boundary F1', 'boundary_f1'], ['Coverage (GT)', 'coverage_gt'], ['Coverage (Pred)', 'coverage_pred']
+    ];
+    let html = '<table class="stat-table"><tbody>';
+    for (const [label, key] of fields) {
+      const v = row[key];
+      const formatted = v !== '' && v != null ? (+v).toFixed(4) : '—';
+      html += `<tr><td>${label}</td><td class="num">${formatted}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function renderRQA() {
+    const el = document.getElementById('rqaContent');
+    const stats = data.hrStats[currentTrial];
+    if (!stats) { el.innerHTML = '<p style="color:#94a3b8;font-size:.84rem">No HRV/RQA data</p>'; return; }
+
+    const fmt = (v) => v !== '' && v != null && v !== undefined ? (+v).toFixed(4) : '—';
+    let html = '';
+
+    for (const [role, label, color] of [['matcher', 'Matcher', COLOR_MATCHER], ['director', 'Director', COLOR_DIRECTOR]]) {
+      const r = stats[role];
+      if (!r) continue;
+      html += `<div style="margin-bottom:10px"><strong style="color:${color};font-size:.82rem">${label}</strong>`;
+      html += '<table class="stat-table"><tbody>';
+      for (const [lbl, key] of [
+        ['BPM Mean', 'bpm_mean'], ['BPM Std', 'bpm_std'], ['RMSSD', 'rmssd'], ['pNN50', 'pnn50'],
+        ['RQA RR', 'rqa_rr'], ['RQA DET', 'rqa_det'], ['RQA LAM', 'rqa_lam'], ['RQA Entropy', 'rqa_entr']
+      ]) {
+        html += `<tr><td>${lbl}</td><td class="num">${fmt(r[key])}</td></tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+
+    const cross = stats.cross;
+    if (cross) {
+      html += '<div><strong style="color:#8b5cf6;font-size:.82rem">Cross-Recurrence</strong>';
+      html += '<table class="stat-table"><tbody>';
+      for (const [lbl, key] of [
+        ['CRQA RR', 'crqa_rr'], ['CRQA DET', 'crqa_det'], ['CRQA LAM', 'crqa_lam'],
+        ['CRQA Entropy', 'crqa_entr'], ['Mean Diag', 'crqa_mean_diag'], ['Max Diag', 'crqa_max_diag']
+      ]) {
+        html += `<tr><td>${lbl}</td><td class="num">${fmt(cross[key])}</td></tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+
+    el.innerHTML = html || '<p style="color:#94a3b8;font-size:.84rem">No HRV/RQA data</p>';
+  }
+
+  function renderProsody() {
+    const el = document.getElementById('prosodyContent');
+    const rows = data.prosody[currentTrial];
+    if (!rows || !rows.length) { el.innerHTML = '<p style="color:#94a3b8;font-size:.84rem">No prosody data</p>'; return; }
+    let html = '<table class="stat-table"><thead><tr><th>File</th><th>Duration</th><th>RMS μ</th><th>RMS σ</th><th>ZCR μ</th><th>F0 μ</th><th>F0 med</th></tr></thead><tbody>';
+    for (const r of rows) {
+      html += '<tr>';
+      html += `<td>${r.filename || '—'}</td>`;
+      html += `<td class="num">${r.duration_sec ? (+r.duration_sec).toFixed(1) + 's' : '—'}</td>`;
+      html += `<td class="num">${r.rms_mean ? (+r.rms_mean).toFixed(4) : '—'}</td>`;
+      html += `<td class="num">${r.rms_std ? (+r.rms_std).toFixed(4) : '—'}</td>`;
+      html += `<td class="num">${r.zcr_mean ? (+r.zcr_mean).toFixed(4) : '—'}</td>`;
+      html += `<td class="num">${r.f0_mean ? (+r.f0_mean).toFixed(1) : '—'}</td>`;
+      html += `<td class="num">${r.f0_median ? (+r.f0_median).toFixed(1) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function renderSpeech() {
+    const el = document.getElementById('speechContent');
+    const rows = data.speech[currentTrial];
+    if (!rows || !rows.length) { el.innerHTML = '<p style="color:#94a3b8;font-size:.84rem">No transcripts</p>'; return; }
+    let html = '<ul class="transcript-list">';
+    for (const r of rows) {
+      const text = r.text || '(no speech detected)';
+      const conf = r.confidence ? `conf: ${(+r.confidence).toFixed(2)}` : '';
+      html += `<li><span class="file">${r.filename || ''}</span>${conf ? '<span class="conf">' + conf + '</span>' : ''}<br>${text}</li>`;
+    }
+    html += '</ul>';
+    el.innerHTML = html;
+  }
+
+  // ── Gaze overlay ──
+  const MAP_SCREEN = {
+    director: { x1: 252, y1: 137, w: 637, h: 880 },
+    matcher:  { x1: 267, y1: 137, w: 637, h: 880 }
+  };
+
+  function screenToCanvas(gx, gy, role) {
+    const m = MAP_SCREEN[role];
+    const cx = ((gx - m.x1) / m.w) * CANVAS_W;
+    const cy = ((gy - m.y1) / m.h) * CANVAS_H;
+    return { x: cx, y: cy };
+  }
+
+  function drawGazeCrosshair(ctx, x, y, color, size) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - size, y); ctx.lineTo(x + size, y);
+    ctx.moveTo(x, y - size); ctx.lineTo(x, y + size);
+    ctx.stroke();
+  }
+
+  function findClosestSample(samples, absMs) {
+    if (!samples.length) return null;
+    let best = null, bestDiff = Infinity;
+    for (const s of samples) {
+      const diff = Math.abs(s.t - absMs);
+      if (diff < bestDiff) { bestDiff = diff; best = s; }
+      if (s.t > absMs) break;
+    }
+    return bestDiff < 500 ? best : null;
+  }
+
+  function drawGazeOverlay(relMs) {
+    const trial = data.trials[currentTrial];
+    if (!trial) return;
+    const absMs = trial.t0 + relMs;
+
+    const dirSample = findClosestSample(data.gazeDirector, absMs);
+    const matSample = findClosestSample(data.gazeMatcher, absMs);
+
+    let dirAoi = '—', matAoi = '—';
+
+    if (dirSample) {
+      dirAoi = dirSample.aoi || '—';
+      if (dirSample.aoi === 'map') {
+        const p = screenToCanvas(+dirSample.gaze_x, +dirSample.gaze_y, 'director');
+        drawGazeCrosshair(strokeCtx, p.x, p.y, COLOR_DIRECTOR, 12);
+      }
+    }
+    if (matSample) {
+      matAoi = matSample.aoi || '—';
+      if (matSample.aoi === 'map') {
+        const p = screenToCanvas(+matSample.gaze_x, +matSample.gaze_y, 'matcher');
+        drawGazeCrosshair(strokeCtx, p.x, p.y, COLOR_MATCHER, 12);
+      }
+    }
+
+    gazeInfoEl.innerHTML = `<span class="dir">Director: ${dirAoi}</span><span class="mat">Matcher: ${matAoi}</span>`;
+  }
+
+  // ── Playback ──
+  function renderFrame() {
+    drawStrokesUpTo(playhead);
+    drawGazeOverlay(playhead);
+    drawHRPlot(playhead);
+    updateTimeLabel();
+  }
+
+  function play() {
+    if (playing) return;
+    if (playhead >= duration) { playhead = 0; drawnStrokeIdx = -1; clearStrokeCanvas(); }
+    playing = true;
+    lastFrameTime = null;
+    playBtn.textContent = 'Pause';
+    playBtn.classList.add('playing');
+    animFrame = requestAnimationFrame(tick);
+  }
+
+  function pause() {
+    playing = false;
+    playBtn.textContent = 'Play';
+    playBtn.classList.remove('playing');
+    if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  }
+
+  function tick(ts) {
+    if (!playing) return;
+    if (lastFrameTime === null) { lastFrameTime = ts; }
+    const dt = ts - lastFrameTime;
+    lastFrameTime = ts;
+    playhead = Math.min(playhead + dt, duration);
+    scrubber.value = playhead;
+    renderFrame();
+    if (playhead >= duration) { pause(); return; }
+    animFrame = requestAnimationFrame(tick);
+  }
+
+  function scrubTo(ms) {
+    playhead = Math.max(0, Math.min(+ms, duration));
+    scrubber.value = playhead;
+    renderFrame();
+  }
+
+  function formatMs(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function updateTimeLabel() {
+    timeLabel.textContent = formatMs(playhead) + ' / ' + formatMs(duration);
+  }
+
+  // ── Event listeners ──
+  function updateProcessBtn() {
+    const ready = directorZipInput.files.length > 0 && matcherZipInput.files.length > 0;
+    processAllBtn.disabled = !ready;
+    uploadHint.textContent = ready ? '' : 'Upload both ZIPs to begin';
+  }
+  directorZipInput.addEventListener('change', updateProcessBtn);
+  matcherZipInput.addEventListener('change', updateProcessBtn);
+
+  processAllBtn.addEventListener('click', () => handleProcessAll());
+
+  trialSelect.addEventListener('change', () => selectTrial(trialSelect.value));
+
+  playBtn.addEventListener('click', () => { playing ? pause() : play(); });
+
+  scrubber.addEventListener('input', () => {
+    const wasPaused = !playing;
+    pause();
+    scrubTo(+scrubber.value);
+    if (!wasPaused) play();
+  });
+
+  // ── Eye tracking helper ──
+  async function processEyeFile(file, format, role) {
+    const buf = await file.arrayBuffer();
+    const resp = await fetch(`/api/process-eye?format=${encodeURIComponent(format)}&role=${encodeURIComponent(role)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: buf
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const csvText = await resp.text();
+    return parseCSV(csvText).map(r => {
+      const out = {};
+      for (const k of Object.keys(r)) out[k] = r[k];
+      out.t = +r.t;
+      out.gaze_x = +r.gaze_x;
+      out.gaze_y = +r.gaze_y;
+      return out;
+    });
+  }
+
+})();
+</script>
+</body>
+</html>

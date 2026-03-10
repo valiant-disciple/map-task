@@ -21,8 +21,8 @@ export default function End() {
 
   async function onExport() {
     if (!state.sessionId) return;
-    const finalImageDataUrl = events.slice().reverse().find(e => e.type === 'final_image')?.payload?.dataUrl ?? null;
-    await downloadSessionZip({ sessionId: state.sessionId, events, finalImageDataUrl });
+    const role = state.role ?? 'director';
+    await downloadSessionZip({ role, sessionId: state.sessionId, events: events.filter(e => !e.role || e.role === role) });
   }
 
   return (

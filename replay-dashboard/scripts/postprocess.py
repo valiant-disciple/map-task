@@ -58,10 +58,37 @@ def epoch_to_iso(t) -> str:
         return ""
 
 
+def rescale_strokes(strokes: List[dict], target_w: int, target_h: int) -> List[dict]:
+    max_x = max_y = 0
+    for s in strokes:
+        for p in s.get("points", []):
+            if isinstance(p.get("x"), (int, float)):
+                max_x = max(max_x, p["x"])
+            if isinstance(p.get("y"), (int, float)):
+                max_y = max(max_y, p["y"])
+    src_w = 1024 if max_x > target_w else target_w
+    src_h = 1024 if max_y > target_h else target_h
+    if src_w == target_w and src_h == target_h:
+        return strokes
+    sx = target_w / src_w
+    sy = target_h / src_h
+    out = []
+    for s in strokes:
+        ns = dict(s)
+        ns["points"] = [{**p, "x": p["x"] * sx, "y": p["y"] * sy} for p in s.get("points", [])]
+        if "width" in ns and ns["width"]:
+            ns["width"] = ns["width"] * min(sx, sy)
+        out.append(ns)
+    return out
+
+
 def load_gt(gt_dir: str, map_number: int):
     path = os.path.join(gt_dir, f"gt_{map_number}.json")
-    with open(path, "r") as f:
-        return json.load(f)
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
 
 
 def stroke_draw(draw: ImageDraw.ImageDraw, stroke: dict, erase: bool):
@@ -209,6 +236,31 @@ def csv_write(rows: List[dict], path: str):
             f.write(",".join(vals) + "\n")
 
 
+def convert_to_wav(audio_bytes: bytes, filename: str = "") -> bytes:
+    import subprocess, tempfile
+    ext = os.path.splitext(filename)[1] or ".webm"
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_in:
+            tmp_in.write(audio_bytes)
+            tmp_in_path = tmp_in.name
+        tmp_out_path = tmp_in_path + ".wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", tmp_in_path, "-ar", "16000", "-ac", "1", tmp_out_path],
+            capture_output=True, timeout=30, check=True,
+        )
+        with open(tmp_out_path, "rb") as f:
+            wav_bytes = f.read()
+        os.unlink(tmp_in_path)
+        os.unlink(tmp_out_path)
+        return wav_bytes
+    except Exception:
+        try: os.unlink(tmp_in_path)
+        except: pass
+        try: os.unlink(tmp_out_path)
+        except: pass
+        return audio_bytes
+
+
 def prosody_features(audio_bytes: bytes, sr_target: int = 16000) -> Dict[str, float]:
     try:
         y, sr = librosa.load(io.BytesIO(audio_bytes), sr=sr_target, mono=True)
@@ -237,6 +289,12 @@ def asr_smallest(audio_bytes: bytes, api_key: str):
     resp = requests.post(url, params=params, headers=headers, data=audio_bytes, timeout=120)
     resp.raise_for_status()
     return resp.json()
+
+
+def _safe_float(v, default: float = 0.0) -> float:
+    """Convert a PyRQA result value to float, replacing NaN/Inf with *default*."""
+    f = float(v)
+    return f if np.isfinite(f) else default
 
 
 def hr_features(hr: List[dict], baseline_mean: float = None, baseline_n: int = 0) -> Dict[str, float]:
@@ -273,14 +331,14 @@ def hr_features(hr: List[dict], baseline_mean: float = None, baseline_n: int = 0
         try:
             ts = TimeSeries(bpms, embedding_dimension=2, time_delay=1)
             threshold = max(0.1 * std, 0.01) if std > 0 else 0.1
-            settings = Settings(ts, threshold=threshold, metric=EuclideanMetric)
+            settings = Settings(ts, neighbourhood=FixedRadius(threshold), similarity_measure=EuclideanMetric)
             comp = RQAComputation.create(settings)
             res = comp.run()
             feats.update({
-                "rqa_rr": float(res.recurrence_rate),
-                "rqa_det": float(res.determinism),
-                "rqa_lam": float(res.laminarity),
-                "rqa_entr": float(res.entropy_diagonal_lines),
+                "rqa_rr": _safe_float(res.recurrence_rate),
+                "rqa_det": _safe_float(res.determinism),
+                "rqa_lam": _safe_float(res.laminarity),
+                "rqa_entr": _safe_float(res.entropy_diagonal_lines),
             })
         except Exception:
             # If RQA fails (e.g., singular data), return HRV-only stats
@@ -310,12 +368,12 @@ def crqa_features(bpms_m: List[float], bpms_d: List[float],
         comp = RQAComputation.create(settings)
         res = comp.run()
         return {
-            "crqa_rr": float(res.recurrence_rate),
-            "crqa_det": float(res.determinism),
-            "crqa_lam": float(res.laminarity),
-            "crqa_entr": float(res.entropy_diagonal_lines),
-            "crqa_mean_diag": float(res.average_diagonal_line_length),
-            "crqa_max_diag": float(res.longest_diagonal_line_length),
+            "crqa_rr": _safe_float(res.recurrence_rate),
+            "crqa_det": _safe_float(res.determinism),
+            "crqa_lam": _safe_float(res.laminarity),
+            "crqa_entr": _safe_float(res.entropy_diagonal_lines),
+            "crqa_mean_diag": _safe_float(res.average_diagonal_line),
+            "crqa_max_diag": _safe_float(res.longest_diagonal_line),
         }
     except Exception:
         return {}
@@ -423,6 +481,7 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             gt = gt_cache[map_number]
             width = gt.get("image", {}).get("width", 651)
             height = gt.get("image", {}).get("height", 900)
+            strokes = rescale_strokes(strokes, width, height)
             gt_mask = strokes_to_mask(gt.get("strokes", []), width, height)
             pred_mask = strokes_to_mask(strokes, width, height)
 
@@ -554,18 +613,16 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                     "filename": fname,
                     "bytes": len(audio_bytes)
                 })
+                # Convert non-WAV audio to WAV for downstream processing
+                wav_bytes = convert_to_wav(audio_bytes, fname) if fname.endswith((".webm", ".ogg", ".opus")) else audio_bytes
                 # Prosody
-                pf = prosody_features(audio_bytes)
+                pf = prosody_features(wav_bytes)
                 if pf:
                     prosody_rows.append({"sessionId": os.path.basename(zip_path), "trial": trial_idx, "filename": fname, **pf})
                 # ASR
                 if asr_key:
                     try:
-                        sr = 16000
-                        y, _ = librosa.load(io.BytesIO(audio_bytes), sr=sr, mono=True)
-                        buf = io.BytesIO()
-                        sf.write(buf, y, sr, format="WAV")
-                        asr_json = asr_smallest(buf.getvalue(), asr_key)
+                        asr_json = asr_smallest(wav_bytes, asr_key)
                         text = asr_json.get("text") or asr_json.get("transcript") or ""
                         conf = asr_json.get("confidence") or asr_json.get("score") or ""
                         speech_rows.append({

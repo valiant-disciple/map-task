@@ -35,6 +35,7 @@ class WatchService {
     private currentPhase: 'baseline' | 'trial' | 'idle' = 'idle';
     private pollTimer: ReturnType<typeof setInterval> | null = null;
     private lastTs: number = 0;
+    private consecutiveFailures: number = 0;
     private base: string = (() => {
         try { return resolveBase(); } catch { return ''; }
     })();
@@ -51,26 +52,41 @@ class WatchService {
     connect() {
         if (this.pollTimer) return;
         if (!this.base) {
+            console.warn('[WatchService] No backend URL configured — HR will not be available');
             this.setStatus('disconnected');
             return;
         }
         this.setStatus('connecting');
+        this.consecutiveFailures = 0;
 
         this.pollTimer = setInterval(async () => {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
             try {
                 const qp = this.deviceId ? `?deviceId=${encodeURIComponent(this.deviceId)}` : '';
-                const resp = await fetch(`${this.base}/api/hr/latest${qp}`);
-                if (!resp.ok) return;
+                const resp = await fetch(`${this.base}/api/hr/latest${qp}`, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (!resp.ok) {
+                    this.consecutiveFailures++;
+                    console.warn(`[WatchService] HTTP ${resp.status} from ${this.base} (fail #${this.consecutiveFailures})`);
+                    if (this.consecutiveFailures >= 5) this.setStatus('disconnected');
+                    return;
+                }
                 const data = await resp.json();
                 if (data.hr && data.ts !== this.lastTs) {
                     this.lastTs = data.ts;
-                this.setStatus('connected');
+                    this.consecutiveFailures = 0;
+                    this.setStatus('connected');
                     const reading: HRReading = { t: data.ts, bpm: data.hr, phase: this.currentPhase };
-                        this.readings.push(reading);
-                        this.hrCallbacks.forEach(cb => cb(reading));
-                    }
-            } catch {
-                // network hiccup, just retry next interval
+                    this.readings.push(reading);
+                    this.hrCallbacks.forEach(cb => cb(reading));
+                }
+            } catch (err: any) {
+                clearTimeout(timeout);
+                this.consecutiveFailures++;
+                const reason = err?.name === 'AbortError' ? 'timeout' : (err?.message || 'unknown');
+                console.warn(`[WatchService] Poll failed: ${reason} (fail #${this.consecutiveFailures})`);
+                if (this.consecutiveFailures >= 5) this.setStatus('disconnected');
             }
         }, 1500);
     }

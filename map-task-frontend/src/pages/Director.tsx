@@ -9,11 +9,10 @@ import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalEvt, signalTrialPrepare, signalSyncState, signalBaselineStart, getBackendHttpBase } from '../services/realtime';
-import type { SyncPhase, SyncState } from '../services/realtime';
+import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalTrialPrepare, signalSyncState } from '../services/realtime';
+import type { SyncState } from '../services/realtime';
 import { downloadSessionZip } from '../utils/zip';
 import { audioRecorder } from '../services/audioRecorder';
-import type { AudioRecordingResult } from '../services/audioRecorder';
 import { watchService, type HRReading } from '../services/watchService';
 import MicCheckWidget from '../components/MicCheckWidget';
 import type { EventRecord } from '../types';
@@ -28,7 +27,6 @@ export default function Director() {
   const loc = useLocation();
   const { state, setTrial, setSession, setMapSet } = useSession();
   const { events, addRaw } = useEventLog();
-  const directorBackendUrl = getBackendHttpBase('director');
 
   const [showTrialSuccess, setShowTrialSuccess] = useState(false);
   const [showTLX, setShowTLX] = useState(false);
@@ -53,9 +51,7 @@ export default function Director() {
   // HR state
   const [baselineDone, setBaselineDone] = useState(false);
   const [baselineHR, setBaselineHR] = useState<number | null>(null);
-  const matcherBaselineRef = useRef<number | null>(null);
-  const hrDataRef = useRef<Map<number, { director: HRReading[]; matcher: HRReading[] }>>(new Map());
-  const incomingHRChunksRef = useRef<Map<string, { data: string }>>(new Map());
+  const hrDataRef = useRef<Map<number, HRReading[]>>(new Map());
 
   // Log demographics once on mount
   useEffect(() => {
@@ -135,13 +131,6 @@ export default function Director() {
     : mapNumberFallback(state.mapSet, activeTrialRef.current);
   const isDataTrial = activeTrialRef.current > state.warmupCount;
 
-  // Derive strokes from Matcher
-  const matcherStrokes = useMemo(() => {
-    return events
-      .filter(e => e.type === 'draw_stroke' && e.role === 'matcher' && e.payload?.trialIndex === activeTrialRef.current)
-      .map(e => e.payload);
-  }, [events, activeTrialRef.current]);
-
   const log = (type: string, payload?: any, role?: 'director' | 'matcher') => {
     const rec: EventRecord = {
       t: Date.now(),
@@ -150,7 +139,6 @@ export default function Director() {
       payload: { ...(payload || {}), trialIndex: activeTrialRef.current, mapNumber: currentMapNum }
     };
     addRaw(rec);
-    if (state.participantId) signalEvt(channelRef.current, rec, state.participantId);
   };
 
   function computeRemainSec(): number {
@@ -184,18 +172,16 @@ export default function Director() {
     if (endedRef.current) return;
     endedRef.current = true;
 
-    // Set HR phase to idle and save HR data (director)
+    // Set HR phase to idle and save HR data (director only)
     watchService.setPhase('idle');
     const ti = activeTrialRef.current;
     const trialHR = watchService.getReadingsForPhase('trial');
-    const existing = hrDataRef.current.get(ti) || { director: [], matcher: [] };
-    existing.director = [...existing.director, ...trialHR];
-    hrDataRef.current.set(ti, existing);
+    const existing = hrDataRef.current.get(ti) || [];
+    hrDataRef.current.set(ti, [...existing, ...trialHR]);
 
     // Stop recording
     if (audioRecorder.isRecording()) {
       audioRecorder.stop().then(res => {
-        // console.log('[Director] Stopped recording', res);
         const current = audioFilesRef.current.get(ti) || [];
         current.push({ blob: res.blob, filename: `director_T${ti}.webm` });
         audioFilesRef.current.set(ti, current);
@@ -261,61 +247,6 @@ export default function Director() {
         if (payload?.role === 'matcher') setPeerDone(true);
       });
 
-      channelRef.current?.on('broadcast', { event: 'evt' }, ({ payload }) => {
-        if (payload?.from && payload.from !== state.participantId) {
-          if (payload?.rec) addRaw(payload.rec as EventRecord);
-        }
-      });
-
-
-      // Handle audio_ready signal — fetch audio from backend via HTTP
-      channelRef.current?.on('broadcast', { event: 'audio_ready' }, async ({ payload }) => {
-        if (!payload) return;
-        const { trialIndex, filename } = payload;
-        console.log(`[Director] Matcher audio ready: ${filename}, fetching...`);
-        try {
-          const backendUrl = directorBackendUrl;
-          const resp = await fetch(`${backendUrl}/api/audio/${state.sessionId}/${trialIndex}/${filename}`);
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const blob = await resp.blob();
-          console.log(`[Director] Fetched ${filename}: ${blob.size} bytes`);
-
-          const current = audioFilesRef.current.get(trialIndex) || [];
-          if (!current.some(f => f.filename === filename)) {
-            current.push({ blob, filename });
-            audioFilesRef.current.set(trialIndex, current);
-          }
-          checkAudioSync();
-        } catch (err) {
-          console.error(`[Director] Failed to fetch ${filename}:`, err);
-        }
-      });
-
-      // Handle incoming HR data from Matcher
-      channelRef.current?.on('broadcast', { event: 'hr_data' }, ({ payload }) => {
-        if (!payload || payload.role !== 'matcher') return;
-        const { trialIndex, data: csvData } = payload;
-        console.log(`[Director] Received HR data from Matcher for trial ${trialIndex}`);
-
-        // Parse CSV data (format: "t,bpm,phase|t,bpm,phase|...")
-        const readings: HRReading[] = csvData.split('|').map((row: string) => {
-          const [t, bpm, phase] = row.split(',');
-          return { t: parseInt(t), bpm: parseInt(bpm), phase: phase as 'baseline' | 'trial' | 'idle' };
-        });
-
-        // Store in hrDataRef
-        const existing = hrDataRef.current.get(trialIndex) || { director: [], matcher: [] };
-        existing.matcher = readings;
-        hrDataRef.current.set(trialIndex, existing);
-      });
-
-      // Handle baseline completion from Matcher
-      channelRef.current?.on('broadcast', { event: 'baseline_complete' }, ({ payload }) => {
-        if (!payload || payload.role !== 'matcher') return;
-        console.log(`[Director] Matcher baseline complete: ${payload.avgBpm} bpm`);
-        matcherBaselineRef.current = payload.avgBpm ?? null;
-      });
-
     }
   }, [state.sessionId, state.participantId, state.mapSet]);
 
@@ -331,26 +262,6 @@ export default function Director() {
       }
     }
   }, [startAt, countdownSec, remainSec, stoppedRemainSec]);
-
-  // Track per-trial audio status
-  const [missingTrials, setMissingTrials] = useState<number[]>([]);
-  const [audioStatus, setAudioStatus] = useState<Record<number, { director: boolean; matcher: boolean }>>({});
-
-  function checkAudioSync() {
-    const missing: number[] = [];
-    const status: Record<number, { director: boolean; matcher: boolean }> = {};
-    for (const [ti, files] of audioFilesRef.current.entries()) {
-      const hasDirector = files.some(f => f.filename.includes('director'));
-      const hasMatcher = files.some(f => f.filename.includes('matcher'));
-      status[ti] = { director: hasDirector, matcher: hasMatcher };
-      // Only block download for data trials
-      if (ti > state.warmupCount && hasDirector && !hasMatcher) {
-        missing.push(ti);
-      }
-    }
-    setAudioStatus(status);
-    setMissingTrials(missing);
-  }
 
   async function startSync() {
     if (!baselineDone) {
@@ -386,22 +297,19 @@ export default function Director() {
     if (endedRef.current) return;
     endedRef.current = true;
 
-    // Set HR phase to idle and save HR data for this trial
+    // Set HR phase to idle and save HR data (director only)
     watchService.setPhase('idle');
     const ti = activeTrialRef.current;
     const trialHR = watchService.getReadingsForPhase('trial');
-    const existing = hrDataRef.current.get(ti) || { director: [], matcher: [] };
-    existing.director = [...existing.director, ...trialHR];
-    hrDataRef.current.set(ti, existing);
+    const existing = hrDataRef.current.get(ti) || [];
+    hrDataRef.current.set(ti, [...existing, ...trialHR]);
 
     // Stop recording
     if (audioRecorder.isRecording()) {
       audioRecorder.stop().then(res => {
-        // console.log('[Director] Stopped recording (manual/timeout)', res);
         const current = audioFilesRef.current.get(ti) || [];
         current.push({ blob: res.blob, filename: `director_T${ti}.webm` });
         audioFilesRef.current.set(ti, current);
-        checkAudioSync();
       }).catch(err => console.error('Error stopping recording:', err));
     }
 
@@ -453,18 +361,16 @@ export default function Director() {
     setBaselineHR(avgBpm);
     setBaselineDone(true);
     log('baseline_hr', { avgBpm, role: 'director' }, 'director');
-    // Signal matcher to start baseline
-    signalBaselineStart(channelRef.current);
   }, []);
 
   async function downloadZip() {
     await downloadSessionZip({
+      role: 'director',
       sessionId: state.sessionId!,
-      events,
-      finalImageDataUrl: null,
+      events: events.filter(e => !e.role || e.role === 'director'),
       audioFiles: audioFilesRef.current,
       hrData: hrDataRef.current,
-      baselineHR: { director: baselineHR, matcher: matcherBaselineRef.current }
+      baselineHR: baselineHR,
     });
   }
 
@@ -484,25 +390,6 @@ export default function Director() {
           onSelectMic={setSelectedMicId}
           onRefreshDevices={refreshDevices}
         />
-        {/* Audio status per trial */}
-        {Object.keys(audioStatus).length > 0 && (
-          <div style={{ border: '1px solid #ccc', borderRadius: 8, padding: 10, backgroundColor: '#fafafa', fontSize: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>🎤 Audio Files</div>
-            {Array.from({ length: total }, (_, i) => i + 1)
-              .filter(ti => ti > state.warmupCount)
-              .map(ti => {
-                const s = audioStatus[ti];
-                const dir = s?.director ? '✅' : '⬜';
-                const mat = s?.matcher ? '✅' : '⏳';
-                return (
-                  <div key={ti} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
-                    <span>T{ti}</span>
-                    <span>Dir {dir} Mat {mat}</span>
-                  </div>
-                );
-              })}
-          </div>
-        )}
       </div>
 
       {/* Main Content */}
@@ -551,11 +438,10 @@ export default function Director() {
             )}
             {activeTrialRef.current >= total && isDataTrial && (
               <button
-                disabled={!canNextData || missingTrials.length > 0}
+                disabled={!canNextData}
                 onClick={downloadZip}
-                title={missingTrials.length > 0 ? `Waiting for matcher audio: T${missingTrials.join(', ')}` : 'Download ZIP'}
               >
-                {missingTrials.length > 0 ? `Waiting for Audio (T${missingTrials.join(',')})...` : 'Download ZIP'}
+                Download ZIP
               </button>
             )}
           </div>
