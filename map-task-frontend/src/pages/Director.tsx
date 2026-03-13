@@ -436,11 +436,8 @@ export default function Director() {
                 ? <button onClick={nextTrial}>Next Trial</button>
                 : <button disabled={!canNextData} onClick={nextTrial}>Next Trial</button>
             )}
-            {activeTrialRef.current >= total && isDataTrial && (
-              <button
-                disabled={!canNextData}
-                onClick={downloadZip}
-              >
+            {activeTrialRef.current >= total && isDataTrial && stoppedRemainSec !== null && canNextData && (
+              <button onClick={downloadZip}>
                 Download ZIP
               </button>
             )}

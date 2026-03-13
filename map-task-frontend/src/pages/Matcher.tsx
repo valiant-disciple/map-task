@@ -329,7 +329,7 @@ export default function Matcher() {
   }, []);
 
   const total = state.trialTotal ?? 8;
-  const allTrialsDone = activeTrialRef.current >= total && isDataTrial && formsDone;
+  const allTrialsDone = activeTrialRef.current >= total && isDataTrial && stoppedRemainSec !== null && formsDone;
 
   async function downloadZip() {
     await downloadSessionZip({
