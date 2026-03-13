@@ -1,32 +1,9 @@
 // Replaced Supabase with custom WebSocket implementation
 
-// Use dedicated session WebSocket URLs if provided, else fallback to VITE_WS_URL
-const BASE_WS = import.meta.env.VITE_SESSION_WS_URL || import.meta.env.VITE_WS_URL || '';
-const WS_URL_DIRECTOR = import.meta.env.VITE_SESSION_WS_URL_DIRECTOR || import.meta.env.VITE_WS_URL_DIRECTOR || BASE_WS;
-const WS_URL_MATCHER = import.meta.env.VITE_SESSION_WS_URL_MATCHER || import.meta.env.VITE_WS_URL_MATCHER || BASE_WS;
+// Single session WebSocket — both roles connect to the same server for sync
+const SESSION_WS = import.meta.env.VITE_SESSION_WS_URL || import.meta.env.VITE_WS_URL || '';
 
 type Role = 'director' | 'matcher';
-
-function toHttp(url: string) {
-  return url.replace('ws://', 'http://').replace('wss://', 'https://');
-}
-
-export function getWsUrlForRole(role?: Role) {
-  if (role === 'director') {
-    if (!WS_URL_DIRECTOR) throw new Error('VITE_WS_URL_DIRECTOR is missing');
-    return WS_URL_DIRECTOR;
-  }
-  if (role === 'matcher') {
-    if (!WS_URL_MATCHER) throw new Error('VITE_WS_URL_MATCHER is missing');
-    return WS_URL_MATCHER;
-  }
-  if (!BASE_WS) throw new Error('VITE_WS_URL is missing');
-  return BASE_WS;
-}
-
-export function getBackendHttpBase(role?: Role) {
-  return toHttp(getWsUrlForRole(role));
-}
 
 class WSChannel {
   ws: WebSocket | null = null;
@@ -103,11 +80,11 @@ class WSChannel {
 // Singleton map to reuse channels per session + URL
 const channels = new Map<string, WSChannel>();
 
-export function joinSession(sessionId: string, role?: Role): WSChannel {
-  const url = getWsUrlForRole(role);
-  const key = `${url}::${sessionId}`;
+export function joinSession(sessionId: string, _role?: Role): WSChannel {
+  if (!SESSION_WS) throw new Error('VITE_SESSION_WS_URL is missing');
+  const key = `${SESSION_WS}::${sessionId}`;
   if (channels.has(key)) return channels.get(key)!;
-  const channel = new WSChannel(sessionId, url);
+  const channel = new WSChannel(sessionId, SESSION_WS);
   channels.set(key, channel);
   return channel;
 }
