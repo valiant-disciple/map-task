@@ -590,21 +590,22 @@
 
       const mapNumber = mapNumberFromEvents(events);
 
-      // Strokes: prefer events-based, fall back to strokes.json
-      let strokes = strokesFromEvents(events);
+      // Strokes: prefer strokes.json (already windowed to last attempt), fall back to events
+      let strokes = [];
+      try {
+        const txt = await zip.file(`trials/${tdir}/strokes.json`).async('text');
+        const raw = JSON.parse(txt);
+        if (Array.isArray(raw)) {
+          strokes = raw.map((s, i) => {
+            let pts = s.polyline || s.points || [];
+            pts = pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+            const mode = s.mode || 'draw';
+            return { points: pts, mode, width: s.width, t: s.t, strokeIndex: i };
+          }).filter(s => s.points.length >= 2 && (s.mode === 'draw' || s.mode === 'erase'));
+        }
+      } catch (_) {}
       if (!strokes.length) {
-        try {
-          const txt = await zip.file(`trials/${tdir}/strokes.json`).async('text');
-          const raw = JSON.parse(txt);
-          if (Array.isArray(raw)) {
-            strokes = raw.map((s, i) => {
-              let pts = s.polyline || s.points || [];
-              pts = pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
-              const mode = s.mode || 'draw';
-              return { points: pts, mode, width: s.width, t: s.t, strokeIndex: i };
-            }).filter(s => s.points.length >= 2 && (s.mode === 'draw' || s.mode === 'erase'));
-          }
-        } catch (_) {}
+        strokes = strokesFromEvents(events);
       }
 
       strokes = rescaleStrokes(strokes);
@@ -662,22 +663,16 @@
     });
   }
 
-  // ── Compute t0 and duration for each trial ──
+  // ── Compute t0 and duration for each trial (strokes only) ──
   function buildTrialTimelines() {
     for (const [idx, trial] of Object.entries(data.trials)) {
-      const times = [];
-      for (const s of trial.strokes) {
-        if (typeof s.t === 'number' && s.t > 0) times.push(s.t);
-        for (const p of s.points || []) {
-          if (typeof p.t === 'number' && p.t > 0) times.push(p.t);
-        }
-      }
-      for (const h of trial.hrMatcher) times.push(h.t);
-      for (const h of trial.hrDirector) times.push(h.t);
+      const strokeTimes = trial.strokes
+        .map(s => s.t)
+        .filter(t => typeof t === 'number' && t > 1e12);
 
-      if (!times.length) { trial.t0 = 0; trial.duration = 0; continue; }
-      trial.t0 = Math.min(...times);
-      trial.duration = Math.max(...times) - trial.t0;
+      if (!strokeTimes.length) { trial.t0 = 0; trial.duration = 0; continue; }
+      trial.t0 = Math.min(...strokeTimes);
+      trial.duration = Math.max(...strokeTimes) - trial.t0;
     }
   }
 

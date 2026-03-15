@@ -55,7 +55,7 @@ class WatchService {
                 if (!resp.ok) {
                     this.consecutiveFailures++;
                     console.warn(`[WatchService] HTTP ${resp.status} from ${this.base} (fail #${this.consecutiveFailures})`);
-                    if (this.consecutiveFailures >= 5) this.setStatus('disconnected');
+                    if (this.consecutiveFailures >= 5 && !this.simulationInterval) this.setStatus('disconnected');
                     return;
                 }
                 const data = await resp.json();
@@ -72,7 +72,7 @@ class WatchService {
                 this.consecutiveFailures++;
                 const reason = err?.name === 'AbortError' ? 'timeout' : (err?.message || 'unknown');
                 console.warn(`[WatchService] Poll failed: ${reason} (fail #${this.consecutiveFailures})`);
-                if (this.consecutiveFailures >= 5) this.setStatus('disconnected');
+                if (this.consecutiveFailures >= 5 && !this.simulationInterval) this.setStatus('disconnected');
             }
         }, 1500);
     }
