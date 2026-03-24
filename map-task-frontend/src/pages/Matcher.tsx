@@ -188,7 +188,10 @@ export default function Matcher() {
 
     // Start Recording (Matcher)
     if (payload?.startAt) {
-      audioRecorder.start(selectedMicId).catch(err => console.error('[Matcher] Rec Start Error', err));
+      audioRecorder.start(selectedMicId).catch(err => {
+        console.error('[Matcher] Rec Start Error', err);
+        alert('Microphone access failed. Audio will not be recorded for this trial.');
+      });
       // Set HR phase to trial
       watchService.setPhase('trial');
     }

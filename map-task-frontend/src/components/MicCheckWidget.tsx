@@ -41,8 +41,10 @@ export default function MicCheckWidget({ onConfirm, selectedMicId, devices, onSe
                     console.warn('[MicCheck] mediaDevices unavailable (insecure context)');
                     return;
                 }
+                // Use ideal (not exact) so it falls back to any mic if the
+                // selected device is unavailable (e.g., stale deviceId on lab PCs)
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: { deviceId: { exact: selectedMicId } }
+                    audio: { deviceId: { ideal: selectedMicId } }
                 });
                 mediaStreamRef.current = stream;
 

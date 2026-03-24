@@ -22,10 +22,17 @@ export class AudioRecorder {
                 console.warn('[AudioRecorder] mediaDevices unavailable — use localhost or HTTPS');
                 return [];
             }
-            // Request permission first, then release the stream immediately
-            const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            tempStream.getTracks().forEach(t => t.stop());
-            const allDevices = await navigator.mediaDevices.enumerateDevices();
+            // Check if we already have permission (labels are populated)
+            let allDevices = await navigator.mediaDevices.enumerateDevices();
+            const hasLabels = allDevices.some(d => d.kind === 'audioinput' && d.label);
+            if (!hasLabels) {
+                // Need to request permission first — acquire and release
+                const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                tempStream.getTracks().forEach(t => t.stop());
+                // Brief delay to let driver fully release the device
+                await new Promise(r => setTimeout(r, 100));
+                allDevices = await navigator.mediaDevices.enumerateDevices();
+            }
             const inputs = allDevices.filter(d => d.kind === 'audioinput');
             console.log(`[AudioRecorder] Found ${inputs.length} audio inputs`);
             return inputs;
@@ -41,40 +48,56 @@ export class AudioRecorder {
             return;
         }
 
-        try {
-            const constraints: MediaStreamConstraints = {
-                audio: deviceId ? { deviceId: { exact: deviceId } } : true
-            };
-
-            if (!navigator.mediaDevices) {
-                throw new Error('mediaDevices unavailable — page must be served over HTTPS or localhost');
-            }
-            this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-            const track = this.stream.getAudioTracks()[0];
-            this.deviceId = deviceId || track.getSettings().deviceId || 'default';
-            this.deviceLabel = track.label || 'Unknown Device';
-
-            // Prefer standard webm/opus
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-                ? 'audio/webm;codecs=opus'
-                : 'audio/webm';
-
-            this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
-            this.chunks = [];
-
-            this.mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) this.chunks.push(e.data);
-            };
-
-            this.mediaRecorder.start();
-            this.startTime = Date.now();
-            console.log(`[AudioRecorder] Started on ${this.deviceLabel} (${this.deviceId})`);
-
-        } catch (err) {
-            console.error('Failed to start recording:', err);
-            throw err;
+        if (!navigator.mediaDevices) {
+            throw new Error('mediaDevices unavailable — page must be served over HTTPS or localhost');
         }
+
+        // Try exact deviceId first, fall back to any mic if it fails
+        // (handles stale deviceIds after device reconnect / driver restart)
+        let stream: MediaStream | null = null;
+        if (deviceId) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { deviceId: { exact: deviceId } }
+                });
+            } catch (exactErr) {
+                console.warn(`[AudioRecorder] Exact device ${deviceId} failed, falling back to preferred`, exactErr);
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        audio: { deviceId: { ideal: deviceId } }
+                    });
+                } catch (idealErr) {
+                    console.warn('[AudioRecorder] Preferred device failed, falling back to default', idealErr);
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                }
+            }
+        } else {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+
+        this.stream = stream;
+
+        const track = this.stream.getAudioTracks()[0];
+        this.deviceId = track.getSettings().deviceId || deviceId || 'default';
+        this.deviceLabel = track.label || 'Unknown Device';
+
+        // Prefer standard webm/opus, then plain webm, then whatever is available
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+            ? 'audio/webm;codecs=opus'
+            : MediaRecorder.isTypeSupported('audio/webm')
+                ? 'audio/webm'
+                : '';
+
+        this.mediaRecorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
+        this.chunks = [];
+
+        this.mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) this.chunks.push(e.data);
+        };
+
+        this.mediaRecorder.start();
+        this.startTime = Date.now();
+        console.log(`[AudioRecorder] Started on ${this.deviceLabel} (${this.deviceId}), mime: ${this.mediaRecorder.mimeType}`);
     }
 
     async stop(): Promise<AudioRecordingResult> {
