@@ -280,6 +280,8 @@ def binary_metrics(gt: np.ndarray, pred: np.ndarray) -> Dict[str, float]:
 
 
 def ssim(gt: np.ndarray, pred: np.ndarray) -> float:
+    gt = gt.astype(np.float64) * 255.0
+    pred = pred.astype(np.float64) * 255.0
     gt_f = gt.astype(np.float32)
     pr_f = pred.astype(np.float32)
     mu_x = gt_f.mean()
@@ -592,7 +594,8 @@ def _freq_domain_hrv(bpms: List[float], timestamps_ms: np.ndarray = None) -> Dic
     if timestamps_ms is not None and len(timestamps_ms) == len(ibi):
         ibi_uniform = _resample_uniform(ibi, timestamps_ms, fs)
     else:
-        ibi_uniform = ibi
+        timestamps_ms = np.cumsum(ibi)
+        ibi_uniform = _resample_uniform(ibi, timestamps_ms, fs)
     if len(ibi_uniform) < 16:
         return {}
     from scipy.signal import welch
@@ -906,7 +909,7 @@ def windowed_xcorr(bpms_m: List[float], bpms_d: List[float],
         "wcc_min_r": float(np.min(correlations)),
         "wcc_std_r": float(np.std(correlations)),
         "wcc_n_windows": len(correlations),
-        "wcc_pct_positive": float(np.mean([1 for r in correlations if r > 0])) if correlations else 0.0,
+        "wcc_pct_positive": float(sum(1 for r in correlations if r > 0) / len(correlations)) if correlations else 0.0,
     }
 
 
