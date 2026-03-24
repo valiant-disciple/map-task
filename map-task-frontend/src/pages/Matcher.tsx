@@ -233,6 +233,9 @@ export default function Matcher() {
       endedRef.current = false;
       setShowTLX(false);
       setShowPSMM(false);
+
+      // Re-measure clock offset between trials to correct for drift
+      (channelRef.current as any)?._remeasureOffset?.();
     }
   };
 
@@ -276,17 +279,25 @@ export default function Matcher() {
         signalClockPong(channelRef.current, payload.t1, payload.pingId);
       });
 
-      // Matcher also measures clock offset to Director (for adjusting startAt)
-      measureClockOffset(channelRef.current, 5, 300).then((result) => {
-        clockOffsetRef.current = result.offsetMs;
-        console.log(`[Sync] Clock offset to Director: ${result.offsetMs}ms (RTT: ${result.rttMs}ms, samples: ${result.samples})`);
-        addRaw({
-          t: Date.now(),
-          type: 'clock_offset',
-          role: 'matcher',
-          payload: { offsetMs: result.offsetMs, rttMs: result.rttMs, samples: result.samples, peerRole: 'director' },
+      // Measure clock offset to Director (for adjusting startAt).
+      // Re-measures between trials to correct for drift.
+      const doOffsetMeasurement = () => {
+        measureClockOffset(channelRef.current!, 5, 300).then((result) => {
+          if (result.samples > 0) {
+            clockOffsetRef.current = result.offsetMs;
+          }
+          console.log(`[Sync] Clock offset to Director: ${result.offsetMs}ms (RTT: ${result.rttMs}ms, samples: ${result.samples})`);
+          addRaw({
+            t: Date.now(),
+            type: 'clock_offset',
+            role: 'matcher',
+            payload: { offsetMs: result.offsetMs, rttMs: result.rttMs, samples: result.samples, peerRole: 'director' },
+          });
         });
-      });
+      };
+      doOffsetMeasurement();
+      // Store for re-measurement between trials
+      (channelRef.current as any)._remeasureOffset = doOffsetMeasurement;
 
       // Request full sync on channel join
       signalSyncRequest(channelRef.current);

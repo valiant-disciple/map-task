@@ -192,15 +192,44 @@ export function measureClockOffset(
   channel: any,
   numSamples = 5,
   intervalMs = 300,
+  timeoutMs = 8000,
 ): Promise<ClockOffsetResult> {
   return new Promise((resolve) => {
     const pingId = Math.random().toString(36).slice(2, 10);
     const offsets: number[] = [];
     const rtts: number[] = [];
     let sent = 0;
+    let resolved = false;
+
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      clearInterval(timer);
+      clearTimeout(timeout);
+
+      if (offsets.length === 0) {
+        // No pongs received — peer likely not connected yet
+        console.warn('[Sync] Clock offset measurement timed out (0 samples). Using offset=0.');
+        resolve({ offsetMs: 0, rttMs: -1, samples: 0 });
+        return;
+      }
+
+      const sorted = [...offsets].sort((a, b) => a - b);
+      const trim = Math.max(1, Math.floor(sorted.length * 0.2));
+      const trimmed = sorted.slice(trim, sorted.length - trim);
+      const avgOffset = trimmed.length > 0
+        ? trimmed.reduce((a, b) => a + b, 0) / trimmed.length
+        : offsets.reduce((a, b) => a + b, 0) / offsets.length;
+      const avgRtt = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+
+      resolve({
+        offsetMs: Math.round(avgOffset * 10) / 10,
+        rttMs: Math.round(avgRtt * 10) / 10,
+        samples: offsets.length,
+      });
+    };
 
     const handler = ({ payload }: any) => {
-      // Only process pongs that match our pingId
       if (payload?.pingId !== pingId) return;
 
       const t4 = Date.now();
@@ -210,21 +239,7 @@ export function measureClockOffset(
       offsets.push(offset);
       rtts.push(rtt);
 
-      if (offsets.length >= numSamples) {
-        const sorted = [...offsets].sort((a, b) => a - b);
-        const trim = Math.max(1, Math.floor(sorted.length * 0.2));
-        const trimmed = sorted.slice(trim, sorted.length - trim);
-        const avgOffset = trimmed.length > 0
-          ? trimmed.reduce((a, b) => a + b, 0) / trimmed.length
-          : offsets.reduce((a, b) => a + b, 0) / offsets.length;
-        const avgRtt = rtts.reduce((a, b) => a + b, 0) / rtts.length;
-
-        resolve({
-          offsetMs: Math.round(avgOffset * 10) / 10,
-          rttMs: Math.round(avgRtt * 10) / 10,
-          samples: offsets.length,
-        });
-      }
+      if (offsets.length >= numSamples) finish();
     };
 
     channel.on('broadcast', { event: 'clock_pong' }, handler);
@@ -237,6 +252,9 @@ export function measureClockOffset(
       signalClockPing(channel, pingId);
       sent++;
     }, intervalMs);
+
+    // Timeout: resolve with whatever samples we have (or 0)
+    const timeout = setTimeout(finish, timeoutMs);
   });
 }
 
