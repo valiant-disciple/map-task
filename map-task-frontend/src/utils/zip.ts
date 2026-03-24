@@ -235,6 +235,29 @@ export async function downloadSessionZip(options: {
     zip.file('session/hr_baseline.json', JSON.stringify({ [role]: baselineHR }, null, 2));
   }
 
+  // ── Sync metadata CSV: clock offsets, flash timestamps, RTT ──
+  const clockEvents = events.filter(e => e.type === 'clock_offset');
+  const flashEvents = events.filter(e => e.type === 'sync_flash');
+  const syncHeader = 'type,role,trial,t_unix_ms,offsetMs,rttMs,samples,peerRole,flashTs';
+  const syncRows: string[] = [];
+  for (const e of clockEvents) {
+    const p = e.payload || {};
+    syncRows.push([
+      'clock_offset', e.role || role, p.trialIndex ?? '', e.t,
+      p.offsetMs ?? '', p.rttMs ?? '', p.samples ?? '', p.peerRole ?? '', ''
+    ].join(','));
+  }
+  for (const e of flashEvents) {
+    const p = e.payload || {};
+    syncRows.push([
+      'sync_flash', e.role || role, p.trialIndex ?? '', e.t,
+      '', '', '', '', p.flashTs ?? ''
+    ].join(','));
+  }
+  if (syncRows.length > 0) {
+    zip.file('session/sync.csv', [syncHeader, ...syncRows].join('\n'));
+  }
+
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

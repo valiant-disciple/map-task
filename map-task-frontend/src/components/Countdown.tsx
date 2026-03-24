@@ -12,7 +12,7 @@ export default function Countdown({ startAt, onDone }: { startAt: number | null;
 
   const msLeft = Math.max(0, startAt - now);
   const sec = Math.ceil(msLeft / 1000);
-  const show = sec > 0 && sec <= 3;
+  const show = sec > 0 && sec <= 5;
 
   useEffect(() => {
     if (msLeft === 0 && onDone) onDone();

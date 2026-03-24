@@ -7,7 +7,8 @@ import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalFormSubmitted, signalTrialEnd, signalSyncRequest } from '../services/realtime';
+import { joinSession, signalFormSubmitted, signalTrialEnd, signalSyncRequest, signalClockPong, measureClockOffset } from '../services/realtime';
+import SyncFlash from '../components/SyncFlash';
 import { downloadSessionZip } from '../utils/zip';
 import { audioRecorder } from '../services/audioRecorder';
 import { watchService, type HRReading } from '../services/watchService';
@@ -52,6 +53,9 @@ export default function Matcher() {
   const [baselineHR, setBaselineHR] = useState<number | null>(null);
   const [micConfirmed, setMicConfirmed] = useState(false);
   const hrDataRef = useRef<Map<number, HRReading[]>>(new Map());
+
+  // Clock offset: Director's clock - Matcher's clock (ms). Positive = Director ahead.
+  const clockOffsetRef = useRef<number>(0);
 
   // Load devices
   const refreshDevices = async () => {
@@ -174,7 +178,10 @@ export default function Matcher() {
       setDuration(Number(payload.durationSec));
     }
     if (payload?.startAt) {
-      setStartAt(Number(payload.startAt));
+      // Adjust Director's timestamp to Matcher's local clock using measured offset
+      // offsetMs = Director_clock - Matcher_clock, so local = remote - offset
+      const adjusted = Number(payload.startAt) - clockOffsetRef.current;
+      setStartAt(adjusted);
       setStoppedRemainSec(null);
       endedRef.current = false;
     }
@@ -254,7 +261,8 @@ export default function Matcher() {
             console.log(`[Matcher] Sync: synced mapNumber=${payload.mapNumber} from Director`);
           }
           if (payload.startAt) {
-            setStartAt(Number(payload.startAt));
+            const adjusted = Number(payload.startAt) - clockOffsetRef.current;
+            setStartAt(adjusted);
             setStoppedRemainSec(null);
             endedRef.current = false;
             // Ensure HR phase is correct when syncing mid-trial
@@ -263,15 +271,41 @@ export default function Matcher() {
         }
       });
 
+      // Respond to Director's clock pings (echo back pingId for disambiguation)
+      channelRef.current?.on('broadcast', { event: 'clock_ping' }, ({ payload }) => {
+        signalClockPong(channelRef.current, payload.t1, payload.pingId);
+      });
+
+      // Matcher also measures clock offset to Director (for adjusting startAt)
+      measureClockOffset(channelRef.current, 5, 300).then((result) => {
+        clockOffsetRef.current = result.offsetMs;
+        console.log(`[Sync] Clock offset to Director: ${result.offsetMs}ms (RTT: ${result.rttMs}ms, samples: ${result.samples})`);
+        addRaw({
+          t: Date.now(),
+          type: 'clock_offset',
+          role: 'matcher',
+          payload: { offsetMs: result.offsetMs, rttMs: result.rttMs, samples: result.samples, peerRole: 'director' },
+        });
+      });
+
       // Request full sync on channel join
       signalSyncRequest(channelRef.current);
     }
   }, [state.sessionId, state.participantId, state.mapSet]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 250);
+    const id = window.setInterval(() => setNow(Date.now()), 50);
     return () => window.clearInterval(id);
   }, []);
+
+  // Auto-end trial on timeout (independent of Director's trial_end broadcast)
+  useEffect(() => {
+    if (startAt && countdownSec === 0 && remainSec === 0 && stoppedRemainSec === null) {
+      if (!endedRef.current) {
+        endTrialNow('timeout');
+      }
+    }
+  }, [startAt, countdownSec, remainSec, stoppedRemainSec]);
 
   // --- Stop recording, store HR & audio locally ---
 
@@ -405,6 +439,10 @@ export default function Matcher() {
           </div>
         </div>
       </div>
+      <SyncFlash
+        startAt={startAt}
+        onFlash={(ts) => log('sync_flash', { flashTs: ts, trialIndex: activeTrialRef.current }, 'matcher')}
+      />
       <TLXForm open={showTLX} onClose={() => setShowTLX(false)} onSubmit={onTLXSubmit} />
       <PSMMForm open={showPSMM} onClose={() => setShowPSMM(false)} onSubmit={onPSMMSubmit} />
     </div>

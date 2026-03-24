@@ -9,8 +9,9 @@ import PSMMForm from '../components/PSMMForm';
 import HRWidget from '../components/HRWidget';
 import { useSession } from '../hooks/useSession';
 import { useEventLog } from '../hooks/useEventLog';
-import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalTrialPrepare, signalSyncState } from '../services/realtime';
-import type { SyncState } from '../services/realtime';
+import { joinSession, signalStart, signalTrialEnd, signalFormSubmitted, signalTrialPrepare, signalSyncState, signalClockPong, measureClockOffset } from '../services/realtime';
+import type { SyncState, ClockOffsetResult } from '../services/realtime';
+import SyncFlash from '../components/SyncFlash';
 import { downloadSessionZip } from '../utils/zip';
 import { audioRecorder } from '../services/audioRecorder';
 import { watchService, type HRReading } from '../services/watchService';
@@ -247,11 +248,27 @@ export default function Director() {
         if (payload?.role === 'matcher') setPeerDone(true);
       });
 
+      // Respond to Matcher's clock pings (echo back pingId for disambiguation)
+      channelRef.current?.on('broadcast', { event: 'clock_ping' }, ({ payload }) => {
+        signalClockPong(channelRef.current, payload.t1, payload.pingId);
+      });
+
+      // Measure clock offset (Director initiates)
+      measureClockOffset(channelRef.current, 5, 300).then((result) => {
+        console.log(`[Sync] Clock offset to Matcher: ${result.offsetMs}ms (RTT: ${result.rttMs}ms, samples: ${result.samples})`);
+        addRaw({
+          t: Date.now(),
+          type: 'clock_offset',
+          role: 'director',
+          payload: { offsetMs: result.offsetMs, rttMs: result.rttMs, samples: result.samples, peerRole: 'matcher' },
+        });
+      });
+
     }
   }, [state.sessionId, state.participantId, state.mapSet]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 250);
+    const id = window.setInterval(() => setNow(Date.now()), 50);
     return () => window.clearInterval(id);
   }, []);
 
@@ -273,7 +290,7 @@ export default function Director() {
       return;
     }
 
-    const sAt = Date.now() + 3000;
+    const sAt = Date.now() + 5000;
     setStartAt(sAt);
     setStoppedRemainSec(null);
     endedRef.current = false;
@@ -422,7 +439,7 @@ export default function Director() {
                 cursor: (!baselineDone || !micConfirmed) ? 'not-allowed' : 'pointer'
               }}
             >
-              {baselineDone && micConfirmed ? 'Start (3s synced)' : !baselineDone ? 'Complete Baseline First' : 'Complete Mic Check First'}
+              {baselineDone && micConfirmed ? 'Start (5s synced)' : !baselineDone ? 'Complete Baseline First' : 'Complete Mic Check First'}
             </button>
           </div>
           )}
@@ -444,6 +461,10 @@ export default function Director() {
           </div>
         </div>
       </div>
+      <SyncFlash
+        startAt={startAt}
+        onFlash={(ts) => log('sync_flash', { flashTs: ts, trialIndex: activeTrialRef.current }, 'director')}
+      />
       <TrialSuccessForm open={showTrialSuccess} onClose={() => setShowTrialSuccess(false)} onSubmit={onTrialSuccessSubmit} trialIndex={activeTrialRef.current} />
       <TLXForm open={showTLX} onClose={() => setShowTLX(false)} onSubmit={onTLXSubmit} />
       <PSMMForm open={showPSMM} onClose={() => setShowPSMM(false)} onSubmit={onPSMMSubmit} />

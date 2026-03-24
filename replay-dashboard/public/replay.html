@@ -138,12 +138,12 @@
       <input type="file" id="matcherZipInput" accept=".zip">
     </div>
     <div>
-      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Director Eye Tracker (Aurora CSV, optional)</label>
-      <input type="file" id="eyeDirectorInput" accept=".csv">
+      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Director Eye Tracker (SmartEye .log, optional)</label>
+      <input type="file" id="eyeDirectorInput" accept=".log,.txt,.csv">
     </div>
     <div>
-      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Matcher Eye Tracker (SmartEye .log, optional)</label>
-      <input type="file" id="eyeMatcherInput" accept=".log,.txt,.csv">
+      <label style="font-size:.82rem;color:#64748b;display:block;margin-bottom:4px">Matcher Eye Tracker (Aurora CSV, optional)</label>
+      <input type="file" id="eyeMatcherInput" accept=".csv">
     </div>
   </div>
   <div style="margin-top:14px;display:flex;align-items:center;gap:12px">
@@ -520,7 +520,6 @@
     await parseProcessedZip(processedBuf);
 
     // Build UI
-    buildTrialTimelines();
     populateTrialSelector();
 
     // Process eye tracker files if provided
@@ -530,12 +529,12 @@
       try {
         if (eyeDirFile) {
           setStatus('Processing director eye data…', 'working');
-          data.gazeDirector = await processEyeFile(eyeDirFile, 'aurora', 'director');
+          data.gazeDirector = await processEyeFile(eyeDirFile, 'smarteye', 'director');
           data.gazeDirector.sort((a, b) => a.t - b.t);
         }
         if (eyeMatFile) {
           setStatus('Processing matcher eye data…', 'working');
-          data.gazeMatcher = await processEyeFile(eyeMatFile, 'smarteye', 'matcher');
+          data.gazeMatcher = await processEyeFile(eyeMatFile, 'aurora', 'matcher');
           data.gazeMatcher.sort((a, b) => a.t - b.t);
         }
       } catch (e) {
@@ -609,7 +608,12 @@
       }
 
       strokes = rescaleStrokes(strokes);
-      strokes.sort((a, b) => (a.t || 0) - (b.t || 0));
+      // Sort by first point time (or stroke-level t as fallback)
+      const strokeTime = s => {
+        const fp = s.points && s.points[0];
+        return (fp && typeof fp.t === 'number') ? fp.t : (s.t || 0);
+      };
+      strokes.sort((a, b) => strokeTime(a) - strokeTime(b));
 
       // HR
       let hrMatcher = [], hrDirector = [];
@@ -622,7 +626,47 @@
         hrDirector = parseRawHR(t);
       } catch (_) {}
 
-      data.trials[idx] = { strokes, hrMatcher, hrDirector, mapNumber, t0: 0, duration: 0 };
+      // Determine trial t0 from events: use startAt from the start event, or first stroke time
+      let trialT0 = 0;
+      let trialDurationMs = 210 * 1000; // default 210s
+      for (const e of events) {
+        if (e.type === 'trial_final_time' && e.payload) {
+          const dur = e.payload.durationSec || e.payload.elapsedSec;
+          if (dur) trialDurationMs = Math.max(trialDurationMs, dur * 1000);
+        }
+      }
+      // Find trial start: look for startAt in start-type events or first event timestamp
+      const startEvt = events.find(e => e.payload?.startAt);
+      if (startEvt) {
+        trialT0 = Number(startEvt.payload.startAt);
+      } else if (strokes.length) {
+        // Use earliest point timestamp or stroke-level t
+        const fp = strokes[0].points && strokes[0].points[0];
+        const firstT = (fp && typeof fp.t === 'number' && fp.t > 1e12) ? fp.t : strokes[0].t;
+        if (firstT > 1e12) trialT0 = firstT;
+      }
+
+      // Convert all stroke + point timestamps from absolute unix ms to relative ms
+      for (const s of strokes) {
+        if (typeof s.t === 'number' && s.t > 1e12) {
+          s.t = s.t - trialT0;
+        }
+        for (const p of s.points || []) {
+          if (typeof p.t === 'number' && p.t > 1e12) {
+            p.t = p.t - trialT0;
+          }
+        }
+      }
+
+      // Convert HR timestamps to relative ms
+      for (const h of hrMatcher) {
+        if (h.t > 1e12) h.t = h.t - trialT0;
+      }
+      for (const h of hrDirector) {
+        if (h.t > 1e12) h.t = h.t - trialT0;
+      }
+
+      data.trials[idx] = { strokes, hrMatcher, hrDirector, mapNumber, t0: 0, absT0: trialT0, duration: trialDurationMs };
     }
   }
 
@@ -663,18 +707,8 @@
     });
   }
 
-  // ── Compute t0 and duration for each trial (strokes only) ──
-  function buildTrialTimelines() {
-    for (const [idx, trial] of Object.entries(data.trials)) {
-      const strokeTimes = trial.strokes
-        .map(s => s.t)
-        .filter(t => typeof t === 'number' && t > 1e12);
-
-      if (!strokeTimes.length) { trial.t0 = 0; trial.duration = 0; continue; }
-      trial.t0 = Math.min(...strokeTimes);
-      trial.duration = Math.max(...strokeTimes) - trial.t0;
-    }
-  }
+  // Trial timelines are now computed during parseOriginalZip:
+  // t0 = 0 (relative), duration = 210s (from events or default)
 
   // ── Trial selector ──
   function populateTrialSelector() {
@@ -744,12 +778,23 @@
     drawnStrokeIdx = -1;
   }
 
-  function drawStroke(s) {
+  // Draw stroke up to maxRelMs. If maxRelMs is null, draw the whole stroke.
+  function drawStroke(s, maxRelMs) {
     const pts = s.points;
     if (pts.length < 2) return;
+    // Determine how many points to draw
+    let endIdx = pts.length - 1;
+    if (maxRelMs != null) {
+      endIdx = -1;
+      for (let i = 0; i < pts.length; i++) {
+        if (typeof pts[i].t === 'number' && pts[i].t > maxRelMs) break;
+        endIdx = i;
+      }
+    }
+    if (endIdx < 1) return;
     strokeCtx.beginPath();
     strokeCtx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) strokeCtx.lineTo(pts[i].x, pts[i].y);
+    for (let i = 1; i <= endIdx; i++) strokeCtx.lineTo(pts[i].x, pts[i].y);
     strokeCtx.lineCap = 'round';
     strokeCtx.lineJoin = 'round';
     strokeCtx.lineWidth = s.width || (s.mode === 'erase' ? 20 : 3);
@@ -760,25 +805,22 @@
   function drawStrokesUpTo(relMs) {
     const trial = data.trials[currentTrial];
     if (!trial) return;
-    const absT = trial.t0 + relMs;
 
-    // Find the target stroke index
+    // Find last stroke whose first point is visible
     let targetIdx = -1;
     for (let i = 0; i < trial.strokes.length; i++) {
-      if ((trial.strokes[i].t || 0) <= absT) targetIdx = i;
+      const firstPt = trial.strokes[i].points[0];
+      const strokeStart = (firstPt && typeof firstPt.t === 'number') ? firstPt.t : (trial.strokes[i].t || 0);
+      if (strokeStart <= relMs) targetIdx = i;
       else break;
     }
 
-    if (targetIdx < drawnStrokeIdx) {
-      // Scrubbed backward — full redraw
-      clearStrokeCanvas();
-      for (let i = 0; i <= targetIdx; i++) drawStroke(trial.strokes[i]);
-      drawnStrokeIdx = targetIdx;
-    } else if (targetIdx > drawnStrokeIdx) {
-      // Incremental forward draw
-      for (let i = drawnStrokeIdx + 1; i <= targetIdx; i++) drawStroke(trial.strokes[i]);
-      drawnStrokeIdx = targetIdx;
+    // Always full redraw — point-level partial strokes require it
+    clearStrokeCanvas();
+    for (let i = 0; i <= targetIdx; i++) {
+      drawStroke(trial.strokes[i], relMs);
     }
+    drawnStrokeIdx = targetIdx;
   }
 
   // ── HR plot ──
@@ -852,7 +894,7 @@
       hrCtx.lineJoin = 'round';
       let started = false;
       for (const s of samples) {
-        const x = xScale(s.t - trial.t0);
+        const x = xScale(s.t);
         const y = yScale(s.bpm);
         if (!started) { hrCtx.moveTo(x, y); started = true; }
         else hrCtx.lineTo(x, y);
@@ -1009,7 +1051,7 @@
   function drawGazeOverlay(relMs) {
     const trial = data.trials[currentTrial];
     if (!trial) return;
-    const absMs = trial.t0 + relMs;
+    const absMs = (trial.absT0 || 0) + relMs;
 
     const dirSample = findClosestSample(data.gazeDirector, absMs);
     const matSample = findClosestSample(data.gazeMatcher, absMs);

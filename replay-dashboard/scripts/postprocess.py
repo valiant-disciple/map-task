@@ -47,6 +47,38 @@ except Exception:
 
 INF = 1e12
 
+# Optional speech pipeline modules
+try:
+    from speech_features import extract_speech_features, extract_pair_features
+    HAS_SPEECH = True
+except Exception:
+    HAS_SPEECH = False
+
+try:
+    from llm_eval import evaluate_trial as llm_evaluate_trial
+    HAS_LLM_EVAL = True
+except Exception:
+    HAS_LLM_EVAL = False
+
+try:
+    from knowledge_graph import process_trial as kg_process_trial
+    HAS_KG = True
+except Exception:
+    HAS_KG = False
+
+try:
+    from gaze_features import (load_gaze_csv, filter_trial as gaze_filter_trial,
+                                extract_gaze_features, extract_pair_gaze_features)
+    HAS_GAZE = True
+except Exception:
+    HAS_GAZE = False
+
+try:
+    from drawing_features import extract_drawing_features
+    HAS_DRAWING = True
+except Exception:
+    HAS_DRAWING = False
+
 
 def epoch_to_iso(t) -> str:
     """Convert Unix epoch milliseconds to ISO 8601 string, or empty if invalid."""
@@ -56,6 +88,126 @@ def epoch_to_iso(t) -> str:
         return datetime.datetime.fromtimestamp(int(t) / 1000, tz=datetime.timezone.utc).isoformat()
     except (ValueError, TypeError, OSError):
         return ""
+
+
+# ── Clock-offset extraction & timestamp alignment ──
+# Convention: the merged ZIP contains clock_offset events from both roles.
+#   - Director's event: offsetMs = Matcher_clock − Director_clock  (peerRole='matcher')
+#   - Matcher's event:  offsetMs = Director_clock − Matcher_clock  (peerRole='director')
+# We normalise all timestamps to **Director's clock** as reference.
+# matcher_offset = Director_clock − Matcher_clock   (positive ⇒ Director ahead)
+# To convert a Matcher timestamp:  t_ref = t_matcher + matcher_offset
+
+
+def extract_clock_offset(zf) -> float:
+    """Return matcher_offset (ms): Director_clock − Matcher_clock.
+
+    Searches session/events.json first, then trial events.  Uses the average
+    of both measurements when available.  Returns 0.0 if no offset found.
+    """
+    offsets: List[float] = []
+
+    def _scan_events(events: list):
+        for e in events:
+            if e.get("type") != "clock_offset":
+                continue
+            p = e.get("payload", {})
+            role = e.get("role", "")
+            ms = p.get("offsetMs")
+            if ms is None:
+                continue
+            ms = float(ms)
+            peer = p.get("peerRole", "")
+            # Normalise to Director_clock − Matcher_clock
+            if role == "matcher" and peer == "director":
+                # offsetMs = Director − Matcher already
+                offsets.append(ms)
+            elif role == "director" and peer == "matcher":
+                # offsetMs = Matcher − Director → negate
+                offsets.append(-ms)
+
+    # 1) Session-level events (global events.json in merged ZIP)
+    for path in ("session/events.json", "events.json"):
+        try:
+            raw = zf.read(path)
+            _scan_events(json.loads(raw.decode("utf-8")))
+        except (KeyError, Exception):
+            pass
+
+    # 2) Fall back: scan every trial's events.json
+    if not offsets:
+        for name in zf.namelist():
+            if name.endswith("/events.json") and "trials/" in name:
+                try:
+                    raw = zf.read(name)
+                    _scan_events(json.loads(raw.decode("utf-8")))
+                except Exception:
+                    pass
+
+    if not offsets:
+        return 0.0
+
+    avg = sum(offsets) / len(offsets)
+    print(f"[sync] Clock offset (Director − Matcher): {avg:.1f} ms  ({len(offsets)} measurement(s))")
+    return avg
+
+
+def apply_offset_to_hr(rows: List[dict], offset_ms: float) -> List[dict]:
+    """Shift all timestamps in HR rows by offset_ms.  Mutates in-place and returns."""
+    if offset_ms == 0:
+        return rows
+    for r in rows:
+        t = r.get("t")
+        if isinstance(t, (int, float)):
+            r["t"] = int(round(t + offset_ms))
+    return rows
+
+
+def interpolate_hr_pair(hr_m: List[dict], hr_d: List[dict],
+                        sample_interval_ms: int = 1000) -> Tuple[List[float], List[float]]:
+    """Resample two (already clock-aligned) HR series onto a common uniform
+    time grid via linear interpolation.
+
+    Returns (bpms_m, bpms_d) of equal length on the same 1-Hz grid spanning
+    the overlapping time range of both series.
+    """
+    def _valid(rows):
+        return [(r["t"], r["bpm"]) for r in rows
+                if isinstance(r.get("t"), (int, float)) and isinstance(r.get("bpm"), (int, float, np.floating))]
+
+    vm = _valid(hr_m)
+    vd = _valid(hr_d)
+    if len(vm) < 2 or len(vd) < 2:
+        # Fall back to raw BPM lists (old behaviour)
+        bm = [r["bpm"] for r in hr_m if isinstance(r.get("bpm"), (int, float, np.floating))]
+        bd = [r["bpm"] for r in hr_d if isinstance(r.get("bpm"), (int, float, np.floating))]
+        n = min(len(bm), len(bd))
+        return bm[:n], bd[:n]
+
+    vm.sort(key=lambda x: x[0])
+    vd.sort(key=lambda x: x[0])
+
+    # Overlapping window
+    t_start = max(vm[0][0], vd[0][0])
+    t_end = min(vm[-1][0], vd[-1][0])
+    if t_end <= t_start:
+        bm = [r["bpm"] for r in hr_m if isinstance(r.get("bpm"), (int, float, np.floating))]
+        bd = [r["bpm"] for r in hr_d if isinstance(r.get("bpm"), (int, float, np.floating))]
+        n = min(len(bm), len(bd))
+        return bm[:n], bd[:n]
+
+    grid = np.arange(t_start, t_end + 1, sample_interval_ms)
+    if len(grid) < 2:
+        bm = [r["bpm"] for r in hr_m if isinstance(r.get("bpm"), (int, float, np.floating))]
+        bd = [r["bpm"] for r in hr_d if isinstance(r.get("bpm"), (int, float, np.floating))]
+        n = min(len(bm), len(bd))
+        return bm[:n], bd[:n]
+
+    tm, bm = zip(*vm)
+    td, bd = zip(*vd)
+    interp_m = np.interp(grid, tm, bm).tolist()
+    interp_d = np.interp(grid, td, bd).tolist()
+    return interp_m, interp_d
 
 
 def rescale_strokes(strokes: List[dict], target_w: int, target_h: int) -> List[dict]:
@@ -158,8 +310,8 @@ def chamfer(gt: np.ndarray, pred: np.ndarray) -> float:
     dt_pr = distance_transform_edt(pred == 0)
     a = dt_gt[pred > 0]
     b = dt_pr[gt > 0]
-    mean_a = np.sqrt(a.mean()) if a.size else 0.0
-    mean_b = np.sqrt(b.mean()) if b.size else 0.0
+    mean_a = float(a.mean()) if a.size else 0.0
+    mean_b = float(b.mean()) if b.size else 0.0
     return float((mean_a + mean_b) / 2)
 
 
@@ -297,65 +449,249 @@ def _safe_float(v, default: float = 0.0) -> float:
     return f if np.isfinite(f) else default
 
 
+def _ibi_from_bpm(bpms: List[float]) -> np.ndarray:
+    """Convert BPM values to inter-beat intervals (IBI) in milliseconds."""
+    return np.array([60000.0 / b for b in bpms if b > 0])
+
+
+def _resample_uniform(values: np.ndarray, timestamps_ms: np.ndarray, fs: float = 4.0) -> np.ndarray:
+    """Resample irregularly sampled data to uniform fs Hz via cubic interpolation."""
+    if len(values) < 4 or len(timestamps_ms) < 4:
+        return values
+    from scipy.interpolate import CubicSpline
+    t_sec = (timestamps_ms - timestamps_ms[0]) / 1000.0
+    cs = CubicSpline(t_sec, values)
+    t_uniform = np.arange(0, t_sec[-1], 1.0 / fs)
+    return cs(t_uniform)
+
+
+# ── Tier 1: Time-domain HRV ──
+
+def _time_domain_hrv(bpms: List[float]) -> Dict[str, float]:
+    """Compute time-domain HRV metrics from BPM series."""
+    arr = np.array(bpms, dtype=np.float64)
+    ibi = _ibi_from_bpm(bpms)
+    diff_bpm = np.diff(arr)
+    diff_ibi = np.diff(ibi)
+
+    mean_hr = float(np.mean(arr))
+    std_hr = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+    mean_rr = float(np.mean(ibi)) if len(ibi) > 0 else 0.0
+    sdnn = float(np.std(ibi, ddof=1)) if len(ibi) > 1 else 0.0
+    rmssd = float(np.sqrt(np.mean(diff_ibi ** 2))) if diff_ibi.size else 0.0
+    ln_rmssd = float(np.log(rmssd)) if rmssd > 0 else 0.0
+    nn50 = int(np.sum(np.abs(diff_ibi) > 50)) if diff_ibi.size else 0
+    pnn50 = float(nn50 / len(diff_ibi)) if diff_ibi.size else 0.0
+    sdsd = float(np.std(diff_ibi, ddof=1)) if len(diff_ibi) > 1 else 0.0
+    hr_range = float(np.max(arr) - np.min(arr)) if len(arr) > 1 else 0.0
+
+    return {
+        "bpm_mean": mean_hr, "bpm_std": std_hr,
+        "bpm_min": float(np.min(arr)), "bpm_max": float(np.max(arr)),
+        "hr_range": hr_range,
+        "mean_rr_ms": mean_rr, "sdnn_ms": sdnn,
+        "rmssd_ms": rmssd, "ln_rmssd": ln_rmssd,
+        "nn50": nn50, "pnn50": pnn50, "sdsd_ms": sdsd,
+    }
+
+
+# ── Tier 2: Nonlinear HRV ──
+
+def _sample_entropy(data: np.ndarray, m: int = 2, r_factor: float = 0.2) -> float:
+    """Compute Sample Entropy (SampEn). r = r_factor * std(data)."""
+    N = len(data)
+    if N < m + 2:
+        return float('nan')
+    r = r_factor * np.std(data, ddof=1)
+    if r == 0:
+        return float('nan')
+
+    def _count_matches(template_len):
+        count = 0
+        templates = np.array([data[i:i + template_len] for i in range(N - template_len)])
+        for i in range(len(templates)):
+            # Chebyshev (max norm) distance
+            dists = np.max(np.abs(templates[i + 1:] - templates[i]), axis=1)
+            count += np.sum(dists <= r)
+        return count
+
+    A = _count_matches(m + 1)
+    B = _count_matches(m)
+    if B == 0:
+        return float('nan')
+    return -np.log(A / B) if A > 0 else float('nan')
+
+
+def _dfa_alpha1(data: np.ndarray, min_n: int = 4, max_n: int = 16) -> float:
+    """Detrended Fluctuation Analysis — short-term scaling exponent alpha1."""
+    N = len(data)
+    if N < max_n + 2:
+        return float('nan')
+    y = np.cumsum(data - np.mean(data))
+    scales = np.arange(min_n, min(max_n + 1, N // 2))
+    if len(scales) < 2:
+        return float('nan')
+    fluct = []
+    for n in scales:
+        n_segments = N // n
+        if n_segments < 1:
+            continue
+        rms_list = []
+        for seg in range(n_segments):
+            idx = np.arange(seg * n, (seg + 1) * n)
+            x = np.arange(n)
+            coeffs = np.polyfit(x, y[idx], 1)
+            trend = np.polyval(coeffs, x)
+            rms_list.append(np.sqrt(np.mean((y[idx] - trend) ** 2)))
+        if rms_list:
+            fluct.append(np.mean(rms_list))
+        else:
+            fluct.append(0.0)
+    fluct = np.array(fluct)
+    valid = fluct > 0
+    if np.sum(valid) < 2:
+        return float('nan')
+    log_n = np.log(scales[:len(fluct)][valid])
+    log_f = np.log(fluct[valid])
+    alpha = float(np.polyfit(log_n, log_f, 1)[0])
+    return alpha
+
+
+def _poincare(ibi: np.ndarray) -> Dict[str, float]:
+    """Poincaré plot metrics: SD1, SD2, SD1/SD2 ratio."""
+    if len(ibi) < 3:
+        return {"sd1_ms": float('nan'), "sd2_ms": float('nan'), "sd1_sd2_ratio": float('nan')}
+    diff = np.diff(ibi)
+    sd1 = float(np.std(diff, ddof=1) / np.sqrt(2))
+    sd2_sq = 2 * np.var(ibi, ddof=1) - 0.5 * np.var(diff, ddof=1)
+    sd2 = float(np.sqrt(max(sd2_sq, 0)))
+    ratio = float(sd1 / sd2) if sd2 > 0 else float('nan')
+    return {"sd1_ms": sd1, "sd2_ms": sd2, "sd1_sd2_ratio": ratio}
+
+
+def _nonlinear_hrv(bpms: List[float]) -> Dict[str, float]:
+    """Compute nonlinear HRV metrics from BPM series."""
+    ibi = _ibi_from_bpm(bpms)
+    if len(ibi) < 10:
+        return {}
+    feats = {}
+    feats["sample_entropy"] = _sample_entropy(ibi)
+    feats["dfa_alpha1"] = _dfa_alpha1(ibi)
+    feats.update(_poincare(ibi))
+    return feats
+
+
+# ── Tier 3: Frequency-domain HRV ──
+
+def _freq_domain_hrv(bpms: List[float], timestamps_ms: np.ndarray = None) -> Dict[str, float]:
+    """Compute frequency-domain HRV via Welch PSD on resampled IBI."""
+    ibi = _ibi_from_bpm(bpms)
+    if len(ibi) < 16:
+        return {}
+    fs = 4.0  # resample to 4 Hz
+    if timestamps_ms is not None and len(timestamps_ms) == len(ibi):
+        ibi_uniform = _resample_uniform(ibi, timestamps_ms, fs)
+    else:
+        ibi_uniform = ibi
+    if len(ibi_uniform) < 16:
+        return {}
+    from scipy.signal import welch
+    nperseg = min(len(ibi_uniform), int(fs * 60))  # up to 60s window
+    freqs, psd = welch(ibi_uniform - np.mean(ibi_uniform), fs=fs, nperseg=nperseg, noverlap=nperseg // 2)
+    vlf_mask = (freqs >= 0.003) & (freqs < 0.04)
+    lf_mask = (freqs >= 0.04) & (freqs < 0.15)
+    hf_mask = (freqs >= 0.15) & (freqs < 0.40)
+    df = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
+    vlf = float(np.trapz(psd[vlf_mask], dx=df)) if vlf_mask.any() else 0.0
+    lf = float(np.trapz(psd[lf_mask], dx=df)) if lf_mask.any() else 0.0
+    hf = float(np.trapz(psd[hf_mask], dx=df)) if hf_mask.any() else 0.0
+    total = vlf + lf + hf
+    lf_hf = float(lf / hf) if hf > 0 else float('nan')
+    return {
+        "vlf_power_ms2": vlf, "lf_power_ms2": lf, "hf_power_ms2": hf,
+        "total_power_ms2": total, "lf_hf_ratio": lf_hf,
+        "lf_nu": float(lf / (lf + hf) * 100) if (lf + hf) > 0 else float('nan'),
+        "hf_nu": float(hf / (lf + hf) * 100) if (lf + hf) > 0 else float('nan'),
+    }
+
+
+# ── RQA (auto-recurrence, per individual) — full metric set ──
+
+def _rqa_features(bpms: List[float], std: float) -> Dict[str, float]:
+    """Full auto-RQA metric set using PyRQA."""
+    if not HAS_RQA or len(bpms) < 10:
+        return {}
+    threshold = max(0.1 * std, 0.01) if std > 0 else 0.1
+    try:
+        ts = TimeSeries(bpms, embedding_dimension=2, time_delay=1)
+        settings = Settings(ts, neighbourhood=FixedRadius(threshold),
+                            similarity_measure=EuclideanMetric)
+        comp = RQAComputation.create(settings)
+        res = comp.run()
+        return {
+            "rqa_rr": _safe_float(res.recurrence_rate),
+            "rqa_det": _safe_float(res.determinism),
+            "rqa_mean_diag": _safe_float(res.average_diagonal_line),
+            "rqa_max_diag": _safe_float(res.longest_diagonal_line),
+            "rqa_div": _safe_float(1.0 / res.longest_diagonal_line if res.longest_diagonal_line > 0 else 0.0),
+            "rqa_entr_diag": _safe_float(res.entropy_diagonal_lines),
+            "rqa_lam": _safe_float(res.laminarity),
+            "rqa_tt": _safe_float(res.trapping_time),
+            "rqa_entr_vert": _safe_float(res.entropy_vertical_lines),
+            "rqa_max_vert": _safe_float(res.longest_vertical_line),
+        }
+    except Exception:
+        return {}
+
+
+# ── Combined per-individual HR features ──
+
 def hr_features(hr: List[dict], baseline_mean: float = None, baseline_n: int = 0) -> Dict[str, float]:
     """
-    HRV + (optional) RQA. If baseline_mean is provided, bpm values are
-    mean-centered using that baseline before computing features.
+    Comprehensive HRV: time-domain + nonlinear + frequency-domain + auto-RQA.
+    If baseline_mean is provided, bpm values are mean-centered before RQA/nonlinear.
     """
     if not hr:
         return {}
     bpms = [r["bpm"] for r in hr if isinstance(r.get("bpm"), (int, float, np.floating))]
     if not bpms:
         return {}
-    baseline_used = baseline_mean is not None
-    if baseline_used:
-        bpms = [b - baseline_mean for b in bpms]
-    mean = float(np.mean(bpms))
-    std = float(np.std(bpms))
-    minv = float(np.min(bpms))
-    maxv = float(np.max(bpms))
-    diff = np.diff(bpms)
-    rmssd = float(np.sqrt(np.mean(diff ** 2))) if diff.size else 0.0
-    pnn50 = float(np.mean(np.abs(diff) > 50)) if diff.size else 0.0
-    feats = {
-        "bpm_mean": mean,
-        "bpm_std": std,
-        "bpm_min": minv,
-        "bpm_max": maxv,
-        "rmssd": rmssd,
-        "pnn50": pnn50,
-        "baseline_mean": baseline_mean if baseline_used else "",
-        "baseline_n": baseline_n if baseline_used else "",
-    }
-    if HAS_RQA and len(bpms) >= 3:
-        try:
-            ts = TimeSeries(bpms, embedding_dimension=2, time_delay=1)
-            threshold = max(0.1 * std, 0.01) if std > 0 else 0.1
-            settings = Settings(ts, neighbourhood=FixedRadius(threshold), similarity_measure=EuclideanMetric)
-            comp = RQAComputation.create(settings)
-            res = comp.run()
-            feats.update({
-                "rqa_rr": _safe_float(res.recurrence_rate),
-                "rqa_det": _safe_float(res.determinism),
-                "rqa_lam": _safe_float(res.laminarity),
-                "rqa_entr": _safe_float(res.entropy_diagonal_lines),
-            })
-        except Exception:
-            # If RQA fails (e.g., singular data), return HRV-only stats
-            pass
+    timestamps_ms = np.array([r["t"] for r in hr if isinstance(r.get("bpm"), (int, float, np.floating))
+                              and isinstance(r.get("t"), (int, float))], dtype=np.float64)
+
+    # Tier 1: Time-domain
+    feats = _time_domain_hrv(bpms)
+    feats["baseline_mean"] = baseline_mean if baseline_mean is not None else ""
+    feats["baseline_n"] = baseline_n if baseline_mean is not None else ""
+
+    # Optionally baseline-correct for RQA/nonlinear
+    bpms_adj = [b - baseline_mean for b in bpms] if baseline_mean is not None else bpms
+    std_adj = float(np.std(bpms_adj, ddof=1)) if len(bpms_adj) > 1 else 0.0
+
+    # Tier 2: Nonlinear
+    feats.update(_nonlinear_hrv(bpms))
+
+    # Tier 3: Frequency-domain
+    feats.update(_freq_domain_hrv(bpms, timestamps_ms if len(timestamps_ms) == len(bpms) else None))
+
+    # Auto-RQA (full set)
+    feats.update(_rqa_features(bpms_adj, std_adj))
+
     return feats
 
 
+# ── CRQA (cross-recurrence) — full metric set ──
+
 def crqa_features(bpms_m: List[float], bpms_d: List[float],
                   baseline_m: float = None, baseline_d: float = None) -> Dict[str, float]:
-    """Cross-Recurrence Quantification Analysis between matcher and director HR."""
-    if not HAS_RQA or len(bpms_m) < 3 or len(bpms_d) < 3:
+    """Cross-Recurrence Quantification Analysis between matcher and director HR — full metric set."""
+    if not HAS_RQA or len(bpms_m) < 10 or len(bpms_d) < 10:
         return {}
     if baseline_m is not None:
         bpms_m = [b - baseline_m for b in bpms_m]
     if baseline_d is not None:
         bpms_d = [b - baseline_d for b in bpms_d]
-    std_both = float(np.std(bpms_m + bpms_d))
+    std_both = float(np.std(bpms_m + bpms_d, ddof=1))
     threshold = max(0.1 * std_both, 0.01) if std_both > 0 else 0.1
     try:
         ts_m = TimeSeries(bpms_m, embedding_dimension=2, time_delay=1)
@@ -370,13 +706,342 @@ def crqa_features(bpms_m: List[float], bpms_d: List[float],
         return {
             "crqa_rr": _safe_float(res.recurrence_rate),
             "crqa_det": _safe_float(res.determinism),
-            "crqa_lam": _safe_float(res.laminarity),
-            "crqa_entr": _safe_float(res.entropy_diagonal_lines),
             "crqa_mean_diag": _safe_float(res.average_diagonal_line),
             "crqa_max_diag": _safe_float(res.longest_diagonal_line),
+            "crqa_div": _safe_float(1.0 / res.longest_diagonal_line if res.longest_diagonal_line > 0 else 0.0),
+            "crqa_entr_diag": _safe_float(res.entropy_diagonal_lines),
+            "crqa_lam": _safe_float(res.laminarity),
+            "crqa_tt": _safe_float(res.trapping_time),
+            "crqa_entr_vert": _safe_float(res.entropy_vertical_lines),
+            "crqa_max_vert": _safe_float(res.longest_vertical_line),
         }
     except Exception:
         return {}
+
+
+# ── MdRQA (Multidimensional RQA) — joint phase space ──
+
+def mdrqa_features(bpms_m: List[float], bpms_d: List[float],
+                   baseline_m: float = None, baseline_d: float = None) -> Dict[str, float]:
+    """MdRQA: embed both HR series in joint 2D phase space."""
+    if not HAS_RQA or len(bpms_m) < 10 or len(bpms_d) < 10:
+        return {}
+    if baseline_m is not None:
+        bpms_m = [b - baseline_m for b in bpms_m]
+    if baseline_d is not None:
+        bpms_d = [b - baseline_d for b in bpms_d]
+    # Align lengths
+    n = min(len(bpms_m), len(bpms_d))
+    bpms_m, bpms_d = bpms_m[:n], bpms_d[:n]
+    # Z-score normalize each channel independently
+    arr_m = np.array(bpms_m, dtype=np.float64)
+    arr_d = np.array(bpms_d, dtype=np.float64)
+    std_m = np.std(arr_m, ddof=1)
+    std_d = np.std(arr_d, ddof=1)
+    if std_m > 0:
+        arr_m = (arr_m - np.mean(arr_m)) / std_m
+    if std_d > 0:
+        arr_d = (arr_d - np.mean(arr_d)) / std_d
+    # Build joint distance matrix (Euclidean in 2D)
+    joint = np.column_stack([arr_m, arr_d])  # shape (n, 2)
+    from scipy.spatial.distance import pdist, squareform
+    D = squareform(pdist(joint, metric='euclidean'))
+    # Threshold: target ~5% recurrence rate
+    threshold = np.percentile(D[np.triu_indices_from(D, k=1)], 5)
+    if threshold <= 0:
+        threshold = 0.01
+    RP = (D <= threshold).astype(np.uint8)
+    np.fill_diagonal(RP, 0)  # exclude line of identity
+    return _rp_metrics(RP, prefix="mdrqa_")
+
+
+def _rp_metrics(RP: np.ndarray, prefix: str = "", min_line: int = 2) -> Dict[str, float]:
+    """Extract RQA metrics directly from a recurrence plot matrix."""
+    N = RP.shape[0]
+    total_pts = N * (N - 1)  # excluding diagonal
+    rec_pts = int(RP.sum())
+    rr = rec_pts / total_pts if total_pts > 0 else 0.0
+
+    # Diagonal lines
+    diag_lengths = []
+    for k in range(-N + 1, N):
+        if k == 0:
+            continue
+        diag = np.diag(RP, k)
+        length = 0
+        for val in diag:
+            if val:
+                length += 1
+            else:
+                if length >= min_line:
+                    diag_lengths.append(length)
+                length = 0
+        if length >= min_line:
+            diag_lengths.append(length)
+
+    # Vertical lines
+    vert_lengths = []
+    for col in range(N):
+        length = 0
+        for row in range(N):
+            if RP[row, col]:
+                length += 1
+            else:
+                if length >= min_line:
+                    vert_lengths.append(length)
+                length = 0
+        if length >= min_line:
+            vert_lengths.append(length)
+
+    det_pts = sum(diag_lengths) if diag_lengths else 0
+    det = det_pts / rec_pts if rec_pts > 0 else 0.0
+    mean_diag = float(np.mean(diag_lengths)) if diag_lengths else 0.0
+    max_diag = float(max(diag_lengths)) if diag_lengths else 0.0
+    div = 1.0 / max_diag if max_diag > 0 else 0.0
+
+    # Shannon entropy of diagonal line lengths
+    if diag_lengths:
+        hist = np.bincount(diag_lengths)
+        hist = hist[hist > 0].astype(float)
+        probs = hist / hist.sum()
+        entr_diag = float(-np.sum(probs * np.log(probs)))
+    else:
+        entr_diag = 0.0
+
+    lam_pts = sum(vert_lengths) if vert_lengths else 0
+    lam = lam_pts / rec_pts if rec_pts > 0 else 0.0
+    tt = float(np.mean(vert_lengths)) if vert_lengths else 0.0
+    max_vert = float(max(vert_lengths)) if vert_lengths else 0.0
+
+    if vert_lengths:
+        hist_v = np.bincount(vert_lengths)
+        hist_v = hist_v[hist_v > 0].astype(float)
+        probs_v = hist_v / hist_v.sum()
+        entr_vert = float(-np.sum(probs_v * np.log(probs_v)))
+    else:
+        entr_vert = 0.0
+
+    return {
+        f"{prefix}rr": rr, f"{prefix}det": det,
+        f"{prefix}mean_diag": mean_diag, f"{prefix}max_diag": max_diag,
+        f"{prefix}div": div, f"{prefix}entr_diag": entr_diag,
+        f"{prefix}lam": lam, f"{prefix}tt": tt,
+        f"{prefix}max_vert": max_vert, f"{prefix}entr_vert": entr_vert,
+    }
+
+
+# ── DCRP (Diagonal Cross-Recurrence Profile) — leader-follower ──
+
+def dcrp_features(bpms_m: List[float], bpms_d: List[float],
+                  baseline_m: float = None, baseline_d: float = None,
+                  max_lag: int = 20) -> Dict[str, float]:
+    """Diagonal Cross-Recurrence Profile: %REC along diagonals offset from LoS."""
+    n = min(len(bpms_m), len(bpms_d))
+    if n < 10:
+        return {}
+    arr_m = np.array(bpms_m[:n], dtype=np.float64)
+    arr_d = np.array(bpms_d[:n], dtype=np.float64)
+    if baseline_m is not None:
+        arr_m = arr_m - baseline_m
+    if baseline_d is not None:
+        arr_d = arr_d - baseline_d
+    std_both = np.std(np.concatenate([arr_m, arr_d]), ddof=1)
+    threshold = max(0.1 * std_both, 0.01) if std_both > 0 else 0.1
+
+    # Build cross-distance matrix
+    from scipy.spatial.distance import cdist
+    D = cdist(arr_m.reshape(-1, 1), arr_d.reshape(-1, 1), metric='euclidean')
+    CRP = (D <= threshold).astype(np.uint8)
+
+    profile = {}
+    for lag in range(-max_lag, max_lag + 1):
+        diag = np.diag(CRP, lag)
+        profile[lag] = float(diag.mean()) if len(diag) > 0 else 0.0
+
+    # Find peak
+    peak_lag = max(profile, key=profile.get)
+    peak_rr = profile[peak_lag]
+    # Profile width at half-max
+    half_max = peak_rr / 2
+    above = [lag for lag, v in profile.items() if v >= half_max]
+    width = (max(above) - min(above)) if above else 0
+
+    return {
+        "dcrp_peak_lag": float(peak_lag),
+        "dcrp_peak_rr": peak_rr,
+        "dcrp_width": float(width),
+        "dcrp_los_rr": profile.get(0, 0.0),  # %REC at lag 0 (line of synchrony)
+    }
+
+
+# ── Windowed Cross-Correlation ──
+
+def windowed_xcorr(bpms_m: List[float], bpms_d: List[float],
+                   window_sec: float = 30.0, step_sec: float = 10.0,
+                   sample_interval_sec: float = 1.5) -> Dict[str, float]:
+    """Sliding-window Pearson cross-correlation with peak lag detection."""
+    n = min(len(bpms_m), len(bpms_d))
+    if n < 10:
+        return {}
+    arr_m = np.array(bpms_m[:n], dtype=np.float64)
+    arr_d = np.array(bpms_d[:n], dtype=np.float64)
+    win_samples = max(int(window_sec / sample_interval_sec), 5)
+    step_samples = max(int(step_sec / sample_interval_sec), 1)
+
+    correlations = []
+    for start in range(0, n - win_samples + 1, step_samples):
+        seg_m = arr_m[start:start + win_samples]
+        seg_d = arr_d[start:start + win_samples]
+        if np.std(seg_m) < 1e-6 or np.std(seg_d) < 1e-6:
+            continue
+        r = float(np.corrcoef(seg_m, seg_d)[0, 1])
+        if np.isfinite(r):
+            correlations.append(r)
+
+    if not correlations:
+        return {}
+    return {
+        "wcc_mean_r": float(np.mean(correlations)),
+        "wcc_max_r": float(np.max(correlations)),
+        "wcc_min_r": float(np.min(correlations)),
+        "wcc_std_r": float(np.std(correlations)),
+        "wcc_n_windows": len(correlations),
+        "wcc_pct_positive": float(np.mean([1 for r in correlations if r > 0])) if correlations else 0.0,
+    }
+
+
+# ── Transfer Entropy (symbolic) ──
+
+def _symbolic_transfer_entropy(x: np.ndarray, y: np.ndarray, m: int = 3) -> float:
+    """Symbolic Transfer Entropy: X → Y (does past of X help predict future of Y?)."""
+    N = len(x)
+    if N < m + 2:
+        return float('nan')
+    # Symbolize: 0 = decrease, 1 = increase
+    sx = (np.diff(x) > 0).astype(int)
+    sy = (np.diff(y) > 0).astype(int)
+    n = min(len(sx), len(sy))
+    sx, sy = sx[:n], sy[:n]
+    if n < m + 1:
+        return float('nan')
+
+    from collections import Counter
+    # Count joint patterns: (y_future, y_past_m, x_past_m)
+    joint_yyx = Counter()
+    joint_yy = Counter()
+    joint_yx = Counter()
+    marg_y = Counter()
+    for i in range(m, n):
+        y_fut = sy[i]
+        y_past = tuple(sy[i - m:i])
+        x_past = tuple(sx[i - m:i])
+        joint_yyx[(y_fut, y_past, x_past)] += 1
+        joint_yy[(y_fut, y_past)] += 1
+        joint_yx[(y_past, x_past)] += 1
+        marg_y[y_past] += 1
+
+    total = sum(joint_yyx.values())
+    if total == 0:
+        return float('nan')
+    te = 0.0
+    for (yf, yp, xp), count in joint_yyx.items():
+        p_yyx = count / total
+        p_yy = joint_yy[(yf, yp)] / total
+        p_yx = joint_yx[(yp, xp)] / total
+        p_y = marg_y[yp] / total
+        if p_yy > 0 and p_yx > 0 and p_y > 0:
+            ratio = (p_yyx * p_y) / (p_yy * p_yx)
+            if ratio > 0:
+                te += p_yyx * np.log2(ratio)
+    return float(te)
+
+
+def transfer_entropy_features(bpms_m: List[float], bpms_d: List[float]) -> Dict[str, float]:
+    """Bidirectional symbolic transfer entropy."""
+    arr_m = np.array(bpms_m, dtype=np.float64)
+    arr_d = np.array(bpms_d, dtype=np.float64)
+    n = min(len(arr_m), len(arr_d))
+    if n < 10:
+        return {}
+    arr_m, arr_d = arr_m[:n], arr_d[:n]
+    te_m2d = _symbolic_transfer_entropy(arr_m, arr_d)  # matcher → director
+    te_d2m = _symbolic_transfer_entropy(arr_d, arr_m)  # director → matcher
+    asym = te_d2m - te_m2d if np.isfinite(te_d2m) and np.isfinite(te_m2d) else float('nan')
+    return {
+        "te_matcher_to_director": te_m2d,
+        "te_director_to_matcher": te_d2m,
+        "te_asymmetry": asym,  # positive = director leads
+    }
+
+
+# ── Windowed CRQA (Tier 3) ──
+
+def windowed_crqa(bpms_m: List[float], bpms_d: List[float],
+                  window_sec: float = 60.0, step_sec: float = 30.0,
+                  sample_interval_sec: float = 1.5) -> Dict[str, float]:
+    """Sliding-window CRQA: track synchrony evolution within a trial."""
+    n = min(len(bpms_m), len(bpms_d))
+    win_samples = max(int(window_sec / sample_interval_sec), 10)
+    step_samples = max(int(step_sec / sample_interval_sec), 1)
+    if n < win_samples:
+        return {}
+
+    rr_values, det_values = [], []
+    for start in range(0, n - win_samples + 1, step_samples):
+        seg_m = bpms_m[start:start + win_samples]
+        seg_d = bpms_d[start:start + win_samples]
+        feats = crqa_features(seg_m, seg_d)
+        if feats:
+            rr_values.append(feats.get("crqa_rr", 0.0))
+            det_values.append(feats.get("crqa_det", 0.0))
+
+    if not rr_values:
+        return {}
+    return {
+        "wcrqa_rr_mean": float(np.mean(rr_values)),
+        "wcrqa_rr_std": float(np.std(rr_values)),
+        "wcrqa_rr_trend": float(np.polyfit(range(len(rr_values)), rr_values, 1)[0]) if len(rr_values) > 1 else 0.0,
+        "wcrqa_det_mean": float(np.mean(det_values)),
+        "wcrqa_det_std": float(np.std(det_values)),
+        "wcrqa_det_trend": float(np.polyfit(range(len(det_values)), det_values, 1)[0]) if len(det_values) > 1 else 0.0,
+        "wcrqa_n_windows": len(rr_values),
+    }
+
+
+# ── Surrogate baseline (pseudo-dyad) ──
+
+def surrogate_crqa(bpms_m: List[float], bpms_d: List[float],
+                   n_surrogates: int = 20,
+                   baseline_m: float = None, baseline_d: float = None) -> Dict[str, float]:
+    """Generate surrogate (time-shifted) baselines for CRQA significance testing."""
+    if len(bpms_m) < 10 or len(bpms_d) < 10:
+        return {}
+    real = crqa_features(bpms_m, bpms_d, baseline_m, baseline_d)
+    if not real:
+        return {}
+    rng = np.random.default_rng(42)
+    surr_rrs, surr_dets = [], []
+    d_arr = np.array(bpms_d)
+    for _ in range(n_surrogates):
+        shift = rng.integers(len(d_arr) // 4, 3 * len(d_arr) // 4)
+        d_shifted = list(np.roll(d_arr, shift))
+        s = crqa_features(bpms_m, d_shifted, baseline_m, baseline_d)
+        if s:
+            surr_rrs.append(s.get("crqa_rr", 0.0))
+            surr_dets.append(s.get("crqa_det", 0.0))
+    if not surr_rrs:
+        return {}
+    real_rr = real.get("crqa_rr", 0.0)
+    real_det = real.get("crqa_det", 0.0)
+    return {
+        "surr_rr_mean": float(np.mean(surr_rrs)),
+        "surr_rr_std": float(np.std(surr_rrs)),
+        "surr_rr_z": float((real_rr - np.mean(surr_rrs)) / np.std(surr_rrs)) if np.std(surr_rrs) > 0 else 0.0,
+        "surr_det_mean": float(np.mean(surr_dets)),
+        "surr_det_std": float(np.std(surr_dets)),
+        "surr_det_z": float((real_det - np.mean(surr_dets)) / np.std(surr_dets)) if np.std(surr_dets) > 0 else 0.0,
+        "surr_n": len(surr_rrs),
+    }
 
 
 def parse_hr_csv(csv_text: str, role: str, trial: int) -> List[dict]:
@@ -400,8 +1065,15 @@ def parse_hr_csv(csv_text: str, role: str, trial: int) -> List[dict]:
     return rows
 
 
-def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
+def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None,
+                openai_key: str = None, map_image_dir: str = None,
+                eye_csv_director: str = None, eye_csv_matcher: str = None):
     os.makedirs(out_dir, exist_ok=True)
+
+    # Pre-load eye tracking data if available
+    gaze_data_d = load_gaze_csv(eye_csv_director) if HAS_GAZE and eye_csv_director else None
+    gaze_data_m = load_gaze_csv(eye_csv_matcher) if HAS_GAZE and eye_csv_matcher else None
+
     with zipfile.ZipFile(zip_path, "r") as zf:
         trial_dirs = sorted({p.split("/")[1] for p in zf.namelist() if p.startswith("trials/") and len(p.split("/")) > 2})
         metrics_rows = []
@@ -413,6 +1085,13 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
         manifest_rows = []
         prosody_rows = []
         speech_rows = []
+        speech_feat_rows = []   # Whisper + Parselmouth + OpenSMILE
+        pair_speech_rows = []   # Dyadic speech features
+        llm_eval_rows = []      # LLM dialogue evaluation
+        kg_rows = []            # Knowledge graph features
+        gaze_feat_rows = []     # Per-individual gaze features
+        gaze_pair_rows = []     # Cross-participant gaze features
+        drawing_feat_rows = []  # Drawing behavior features
         gt_cache = {}
         ts_rows = []
         audio_out_dir = os.path.join(out_dir, "audio")
@@ -428,6 +1107,23 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                 zip_baseline["matcher"] = float(bl["matcher"])
         except Exception:
             pass
+
+        # ── Clock offset: align Matcher timestamps to Director's reference clock ──
+        matcher_offset_ms = extract_clock_offset(zf)
+
+        # Apply clock offset to Matcher gaze data (preprocess_eye.py aligned it
+        # to Matcher's laptop clock; we now shift to Director's reference clock)
+        if gaze_data_m and matcher_offset_ms != 0:
+            for gr in gaze_data_m:
+                t = gr.get("t_unix_ms")
+                if t is not None and t != "":
+                    try:
+                        corrected = int(round(int(t) + matcher_offset_ms))
+                        gr["t_unix_ms"] = str(corrected)
+                        gr["t_iso"] = epoch_to_iso(corrected)
+                    except (ValueError, TypeError):
+                        pass
+            print(f"[sync] Applied {matcher_offset_ms:+.1f}ms offset to {len(gaze_data_m)} Matcher gaze samples")
 
         for tdir in trial_dirs:
             try:
@@ -508,11 +1204,29 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                 "coverage_pred": coverage_pred,
             })
 
+            # Drawing behavior features
+            if HAS_DRAWING and strokes:
+                df_row = extract_drawing_features(strokes, trial_idx, gt_cache.get(map_number))
+                df_row["sessionId"] = os.path.basename(zip_path)
+                df_row["mapNumber"] = map_number
+                drawing_feat_rows.append(df_row)
+
+            # Strokes are Matcher-sourced — shift timestamps to Director reference clock
+            def _offset_t(t_val):
+                """Apply matcher_offset_ms to a timestamp value."""
+                if matcher_offset_ms == 0 or t_val == "" or t_val is None:
+                    return t_val
+                try:
+                    return int(round(int(t_val) + matcher_offset_ms))
+                except (ValueError, TypeError):
+                    return t_val
+
             for sidx, sraw in enumerate(strokes):
-                stroke_t = sraw.get("t", "")
+                stroke_t = _offset_t(sraw.get("t", ""))
                 for pidx, p in enumerate(sraw.get("points", [])):
                     pt_t = p.get("t", "") if isinstance(p, dict) else ""
-                    t_val = pt_t if pt_t else stroke_t
+                    raw_t = pt_t if pt_t else sraw.get("t", "")
+                    t_val = _offset_t(raw_t)
                     strokes_rows.append({
                         "sessionId": os.path.basename(zip_path),
                         "trial": trial_idx,
@@ -527,9 +1241,10 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                         "y": p["y"],
                     })
 
-            # HR
+            # HR — parse and align Matcher timestamps to Director's reference clock
             hr_m = parse_hr_csv(hr_m_bytes.decode("utf-8"), "matcher", trial_idx) if hr_m_bytes else []
             hr_d = parse_hr_csv(hr_d_bytes.decode("utf-8"), "director", trial_idx) if hr_d_bytes else []
+            apply_offset_to_hr(hr_m, matcher_offset_ms)
 
             def add_hr_rows(role_rows, rows, role):
                 baseline_mean = zip_baseline.get(role)
@@ -579,16 +1294,42 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             add_hr_rows(hr_matcher_rows, hr_m, "matcher")
             add_hr_rows(hr_director_rows, hr_d, "director")
 
-            # Cross-recurrence (MDRQA) between matcher and director
-            bpms_m = [r["bpm"] for r in hr_m if isinstance(r.get("bpm"), (int, float, np.floating))]
-            bpms_d = [r["bpm"] for r in hr_d if isinstance(r.get("bpm"), (int, float, np.floating))]
+            # Cross-dyad metrics — timestamps already aligned to Director clock;
+            # interpolate both series to a common 1 Hz grid for proper temporal alignment
+            bpms_m, bpms_d = interpolate_hr_pair(hr_m, hr_d, sample_interval_ms=1000)
             base_m = zip_baseline.get("matcher")
             base_d = zip_baseline.get("director")
+            cross_row = {"sessionId": os.path.basename(zip_path), "trial": trial_idx, "role": "cross"}
+            # CRQA (full metrics)
             crqa = crqa_features(bpms_m, bpms_d, baseline_m=base_m, baseline_d=base_d)
             if crqa:
-                crqa_row = {"sessionId": os.path.basename(zip_path), "trial": trial_idx, "role": "cross"}
-                crqa_row.update(crqa)
-                hr_stats_rows.append(crqa_row)
+                cross_row.update(crqa)
+            # MdRQA (joint phase space)
+            mdrqa = mdrqa_features(bpms_m, bpms_d, baseline_m=base_m, baseline_d=base_d)
+            if mdrqa:
+                cross_row.update(mdrqa)
+            # DCRP (leader-follower)
+            dcrp = dcrp_features(bpms_m, bpms_d, baseline_m=base_m, baseline_d=base_d)
+            if dcrp:
+                cross_row.update(dcrp)
+            # Windowed Cross-Correlation
+            wcc = windowed_xcorr(bpms_m, bpms_d)
+            if wcc:
+                cross_row.update(wcc)
+            # Transfer Entropy (bidirectional)
+            te = transfer_entropy_features(bpms_m, bpms_d)
+            if te:
+                cross_row.update(te)
+            # Windowed CRQA (time-varying synchrony)
+            wcrqa = windowed_crqa(bpms_m, bpms_d)
+            if wcrqa:
+                cross_row.update(wcrqa)
+            # Surrogate baseline for significance testing
+            surr = surrogate_crqa(bpms_m, bpms_d, baseline_m=base_m, baseline_d=base_d)
+            if surr:
+                cross_row.update(surr)
+            if len(cross_row) > 3:  # has more than just sessionId/trial/role
+                hr_stats_rows.append(cross_row)
 
             # Audio
             for rel in zf.namelist():
@@ -642,7 +1383,133 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                             "error": str(e)[:200]
                         })
 
+            # ── Speech pipeline (Whisper + Parselmouth + OpenSMILE + LLM eval + KG) ──
+            # Collect WAV paths per role from saved audio files
+            trial_wav_paths = {}  # role -> wav_path
+            trial_transcripts = {}  # role -> transcript text
+            for rel in zf.namelist():
+                if not rel.startswith(f"trials/{tdir}/audio/") or rel.endswith("/"):
+                    continue
+                fname = os.path.basename(rel)
+                role_audio = None
+                if "director" in fname.lower():
+                    role_audio = "director"
+                elif "matcher" in fname.lower():
+                    role_audio = "matcher"
+                if role_audio:
+                    saved_path = os.path.join(audio_out_dir, f"T{trial_idx:02d}_{fname}")
+                    # Save WAV version for speech modules
+                    if os.path.exists(saved_path):
+                        if saved_path.endswith((".webm", ".ogg", ".opus")):
+                            wav_path = saved_path.rsplit(".", 1)[0] + ".wav"
+                            if not os.path.exists(wav_path):
+                                try:
+                                    with open(saved_path, "rb") as af:
+                                        wav_data = convert_to_wav(af.read(), fname)
+                                    with open(wav_path, "wb") as wf:
+                                        wf.write(wav_data)
+                                except Exception:
+                                    wav_path = saved_path
+                            trial_wav_paths[role_audio] = wav_path
+                        else:
+                            trial_wav_paths[role_audio] = saved_path
+
+            # Per-role speech features (Whisper + Parselmouth + OpenSMILE)
+            if HAS_SPEECH and openai_key and trial_wav_paths:
+                for role_audio, wav_path in trial_wav_paths.items():
+                    try:
+                        sf_row = extract_speech_features(wav_path, role_audio, trial_idx, openai_key)
+                        trial_transcripts[role_audio] = sf_row.get("transcript", "")
+                        # Flatten for CSV (remove nested lists)
+                        flat = {"sessionId": os.path.basename(zip_path), "trial": trial_idx, "role": role_audio}
+                        for k, v in sf_row.items():
+                            if k in ("words", "segments"):
+                                flat[f"{k}_count"] = len(v) if isinstance(v, list) else 0
+                            elif isinstance(v, (int, float, str, bool)):
+                                flat[k] = v
+                        speech_feat_rows.append(flat)
+                    except Exception as e:
+                        speech_feat_rows.append({
+                            "sessionId": os.path.basename(zip_path), "trial": trial_idx,
+                            "role": role_audio, "error": str(e)[:200]
+                        })
+
+                # Pair-level speech features
+                if "director" in trial_wav_paths and "matcher" in trial_wav_paths:
+                    try:
+                        pair_f = extract_pair_features(
+                            trial_wav_paths["director"], trial_wav_paths["matcher"],
+                            trial_idx, openai_key)
+                        pair_f["sessionId"] = os.path.basename(zip_path)
+                        pair_speech_rows.append(pair_f)
+                    except Exception as e:
+                        pair_speech_rows.append({
+                            "sessionId": os.path.basename(zip_path), "trial": trial_idx,
+                            "error": str(e)[:200]
+                        })
+
+            # LLM dialogue evaluation (dialogue acts, quality, convergence)
+            d_text = trial_transcripts.get("director", "")
+            m_text = trial_transcripts.get("matcher", "")
+            if HAS_LLM_EVAL and openai_key and (d_text or m_text):
+                try:
+                    llm_row = llm_evaluate_trial(d_text, m_text, trial_idx, openai_key)
+                    llm_row["sessionId"] = os.path.basename(zip_path)
+                    llm_eval_rows.append(llm_row)
+                except Exception as e:
+                    llm_eval_rows.append({
+                        "sessionId": os.path.basename(zip_path), "trial": trial_idx,
+                        "error": str(e)[:200]
+                    })
+
+            # Knowledge graph extraction
+            if HAS_KG and openai_key and (d_text or m_text):
+                try:
+                    kg_gt = gt_cache.get(map_number, {}) if gt_cache else None
+                    kg_row = kg_process_trial(
+                        d_text, m_text, map_number,
+                        gt_json=kg_gt,
+                        map_image_dir=map_image_dir,
+                        api_key=openai_key)
+                    kg_row["sessionId"] = os.path.basename(zip_path)
+                    kg_row["trial"] = trial_idx
+                    kg_rows.append(kg_row)
+                except Exception as e:
+                    kg_rows.append({
+                        "sessionId": os.path.basename(zip_path), "trial": trial_idx,
+                        "mapNumber": map_number, "error": str(e)[:200]
+                    })
+
+            # ── Gaze features (from preprocessed eye CSVs) ──
+            trial_label = tdir  # e.g. "T03"
+            if HAS_GAZE and (gaze_data_d or gaze_data_m):
+                gaze_d_trial = gaze_filter_trial(gaze_data_d, trial_label) if gaze_data_d else []
+                gaze_m_trial = gaze_filter_trial(gaze_data_m, trial_label) if gaze_data_m else []
+
+                # Per-individual gaze features
+                if gaze_d_trial:
+                    gf_d = extract_gaze_features(gaze_d_trial, "director", trial_label)
+                    gf_d["sessionId"] = os.path.basename(zip_path)
+                    gaze_feat_rows.append(gf_d)
+                if gaze_m_trial:
+                    gf_m = extract_gaze_features(gaze_m_trial, "matcher", trial_label)
+                    gf_m["sessionId"] = os.path.basename(zip_path)
+                    gaze_feat_rows.append(gf_m)
+
+                # Cross-participant + multimodal gaze features
+                if gaze_d_trial and gaze_m_trial:
+                    gt_for_gaze = gt_cache.get(map_number, {})
+                    gp = extract_pair_gaze_features(
+                        gaze_d_trial, gaze_m_trial, trial_label,
+                        strokes=strokes,
+                        gt_json=gt_for_gaze if gt_for_gaze else None,
+                        hr_d=hr_d, hr_m=hr_m,
+                    )
+                    gp["sessionId"] = os.path.basename(zip_path)
+                    gaze_pair_rows.append(gp)
+
             # Extract trial-level metadata from events
+            # Offset-correct Matcher timestamps to Director reference clock
             trial_start_t = ""
             trial_end_t = ""
             target_reached = ""
@@ -652,12 +1519,17 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
             tlx_matcher = {}
             for e in events:
                 etype = e.get("type", "")
+                e_role = e.get("role", "")
                 if etype == "trial_final_time":
                     t_val = e.get("t", "")
+                    if t_val and e_role == "matcher":
+                        t_val = _offset_t(t_val)
                     if not trial_end_t or (t_val and t_val > trial_end_t):
                         trial_end_t = t_val
                 if etype == "draw_stroke" and not trial_start_t:
-                    trial_start_t = e.get("t", "")
+                    t_val = e.get("t", "")
+                    # draw_stroke is always matcher
+                    trial_start_t = _offset_t(t_val) if t_val else ""
                 if etype == "trial_success":
                     p = e.get("payload", {})
                     target_reached = p.get("targetReached", "")
@@ -675,6 +1547,8 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                 "sessionId": os.path.basename(zip_path),
                 "trial": trial_idx,
                 "mapNumber": map_number,
+                "clock_offset_ms": round(matcher_offset_ms, 1),
+                "ref_clock": "director",
                 "trial_start_ms": trial_start_t,
                 "trial_start_iso": epoch_to_iso(trial_start_t),
                 "trial_end_ms": trial_end_t,
@@ -720,7 +1594,7 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
                 m_ts = binary_metrics(gt_mask, current_mask)
                 cd_ts = chamfer(gt_mask, current_mask)
                 bf_ts = boundary_f(gt_mask, current_mask, 2)
-                t_val = sraw.get("t", "")
+                t_val = _offset_t(sraw.get("t", ""))
                 ts_rows.append({
                     "sessionId": os.path.basename(zip_path),
                     "trial": trial_idx,
@@ -751,6 +1625,13 @@ def process_zip(zip_path: str, gt_dir: str, out_dir: str, asr_key: str = None):
         if speech_rows: csv_write(speech_rows, os.path.join(out_dir, "speech.csv"))
         if hr_stats_rows: csv_write(hr_stats_rows, os.path.join(out_dir, "hr_stats.csv"))
         if ts_rows: csv_write(ts_rows, os.path.join(out_dir, "time_series_metrics.csv"))
+        if speech_feat_rows: csv_write(speech_feat_rows, os.path.join(out_dir, "speech_features.csv"))
+        if pair_speech_rows: csv_write(pair_speech_rows, os.path.join(out_dir, "pair_speech.csv"))
+        if llm_eval_rows: csv_write(llm_eval_rows, os.path.join(out_dir, "llm_eval.csv"))
+        if kg_rows: csv_write(kg_rows, os.path.join(out_dir, "knowledge_graph.csv"))
+        if gaze_feat_rows: csv_write(gaze_feat_rows, os.path.join(out_dir, "gaze_features.csv"))
+        if gaze_pair_rows: csv_write(gaze_pair_rows, os.path.join(out_dir, "gaze_pair.csv"))
+        if drawing_feat_rows: csv_write(drawing_feat_rows, os.path.join(out_dir, "drawing_features.csv"))
 
 
 def main():
@@ -759,8 +1640,20 @@ def main():
     ap.add_argument("--gt-dir", default="Ground Truth Maps", help="GT JSON directory (gt_#.json)")
     ap.add_argument("--out", default="out", help="Output directory")
     ap.add_argument("--smallest-key", default=None, help="Smallest Pulse API key (optional for ASR)")
+    ap.add_argument("--openai-key", default=None, help="OpenAI API key (for Whisper, LLM eval, KG)")
+    ap.add_argument("--map-image-dir", default=None,
+                     help="Directory containing map images (map{N}f.gif) for KG vision extraction")
+    ap.add_argument("--eye-director", default=None,
+                     help="Preprocessed eye CSV for Director (from preprocess_eye.py)")
+    ap.add_argument("--eye-matcher", default=None,
+                     help="Preprocessed eye CSV for Matcher (from preprocess_eye.py)")
     args = ap.parse_args()
-    process_zip(args.zip, args.gt_dir, args.out, args.smallest_key or os.getenv("SMALLEST_AI_KEY"))
+    process_zip(args.zip, args.gt_dir, args.out,
+                asr_key=args.smallest_key or os.getenv("SMALLEST_AI_KEY"),
+                openai_key=args.openai_key or os.getenv("OPENAI_API_KEY"),
+                map_image_dir=args.map_image_dir,
+                eye_csv_director=args.eye_director,
+                eye_csv_matcher=args.eye_matcher)
 
 
 if __name__ == "__main__":

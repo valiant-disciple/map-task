@@ -39,7 +39,12 @@ export function setupWebSocket(server: Server) {
                 const msgString = message.toString();
                 const data = JSON.parse(msgString) as ClientMessage;
 
-                if (data.type === 'join') {
+                if (data.type === 'ping') {
+                    // Keepalive — respond with pong to keep Render from sleeping
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ event: 'pong' }));
+                    }
+                } else if (data.type === 'join') {
                     // ── Session join (Director / Matcher) ──
                     if (data.session) {
                         currentSession = data.session;
