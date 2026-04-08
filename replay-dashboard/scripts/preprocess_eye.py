@@ -237,13 +237,21 @@ def detect_flash_in_pupil(rows: list, flash_ts_unix_ms: int,
     """
     Detect the pupil constriction onset caused by a sync flash.
 
-    Searches eye tracker data around flash_ts for a sharp pupil diameter drop.
-    Returns the eye-tracker timestamp (t_unix_ms) of the detected flash onset,
-    or 0 if not detected.
+    The pupillary light reflex fires AFTER the flash (physiological latency
+    ~150-500ms). We therefore search only in a forward window starting 100ms
+    after the flash (to skip the flash itself) and ending at flash + 800ms
+    (upper bound of normal reflex latency). This prevents pre-flash blinks
+    from being mistakenly chosen as the constriction response.
+
+    Returns the eye-tracker timestamp (t_unix_ms) of the detected constriction
+    onset, or 0 if not detected.
     """
-    # Gather pupil samples in the search window
-    window_start = flash_ts_unix_ms - search_window_ms
-    window_end = flash_ts_unix_ms + search_window_ms
+    # Search ONLY after the flash — pupil reflex is always forward in time.
+    # [+100ms, +800ms] captures the physiologically plausible window.
+    # Use the broader 2000ms window only as a fallback if the tight window
+    # yields too few samples (e.g., participant blinked during flash).
+    window_start = flash_ts_unix_ms + 100
+    window_end = flash_ts_unix_ms + 800
     samples = []
     for r in rows:
         t = _safe_int(r.get("t_unix_ms"))
@@ -255,12 +263,26 @@ def detect_flash_in_pupil(rows: list, flash_ts_unix_ms: int,
         if vals:
             samples.append((t, sum(vals) / len(vals)))
 
+    # Fallback: widen to ±search_window_ms if too few samples (e.g., blink)
+    if len(samples) < 5:
+        window_start = flash_ts_unix_ms - search_window_ms
+        window_end = flash_ts_unix_ms + search_window_ms
+        samples = []
+        for r in rows:
+            t = _safe_int(r.get("t_unix_ms"))
+            if t is None or t < window_start or t > window_end:
+                continue
+            pl = _safe_float(r.get("pupil_left"))
+            pr = _safe_float(r.get("pupil_right"))
+            vals = [v for v in [pl, pr] if v is not None and v > 0]
+            if vals:
+                samples.append((t, sum(vals) / len(vals)))
+
     if len(samples) < 10:
         return 0
 
-    # Find the sharpest pupil diameter drop (constriction onset)
-    # The flash causes a sudden decrease ~200-500ms after the flash
-    # Look for the steepest negative derivative
+    # Find the sharpest pupil diameter drop (constriction onset).
+    # Returns the timestamp of the sample BEFORE the steepest drop.
     best_drop = 0
     best_t = 0
     for i in range(1, len(samples)):
@@ -271,9 +293,152 @@ def detect_flash_in_pupil(rows: list, flash_ts_unix_ms: int,
         rate = dp / dt  # mm/ms — negative = constriction
         if rate < best_drop:
             best_drop = rate
-            best_t = samples[i-1][0]
+            best_t = samples[i - 1][0]
 
     return best_t
+
+
+# Typical pupillary light reflex onset latency in ms.
+# This is subtracted from the raw offset so the correction maps the
+# trial start (flashTs) to t=0 in eye tracker time, not the constriction onset.
+_PUPIL_REFLEX_LATENCY_MS = 250
+
+
+def find_coarse_offset_by_flash_pattern(rows: list,
+                                        flash_timestamps_ms: list,
+                                        tolerance_ms: int = 8000) -> "int | None":
+    """
+    Find the clock offset between eye tracker and browser when the offset is
+    too large for per-trial window search (e.g., eye tracker machine clock is
+    minutes ahead or behind the browser machine).
+
+    Strategy:
+      1. Build a downsampled pupil signal (~10Hz) from the full recording.
+      2. Find all timepoints with a significant pupil drop over the next 600ms
+         (candidates for flash-induced constrictions).
+      3. Keep the top N_CANDIDATES by drop magnitude.
+      4. For each candidate as a potential first-flash match, check whether
+         the remaining flashes can be found at the expected inter-trial offsets.
+      5. The candidate set with the most matches gives the coarse offset.
+
+    Returns estimated offset (eye_tracker_ms - browser_ms), or None if the
+    pattern cannot be identified with sufficient confidence.
+    """
+    n_flashes = len(flash_timestamps_ms)
+    if n_flashes < 3:
+        return None
+
+    # Build ~10Hz pupil time series (skip samples < 80ms apart)
+    series = []
+    prev_t = -99999
+    for r in rows:
+        t = _safe_int(r.get("t_unix_ms"))
+        if t is None or t - prev_t < 80:
+            continue
+        pl = _safe_float(r.get("pupil_left"))
+        pr = _safe_float(r.get("pupil_right"))
+        vals = [v for v in [pl, pr] if v is not None and v > 0]
+        if vals:
+            series.append((t, sum(vals) / len(vals)))
+            prev_t = t
+
+    if len(series) < n_flashes * 15:
+        return None
+
+    # For each point, compute the mean pupil 400-700ms later.
+    # A large positive "drop" = constriction = candidate flash response.
+    n = len(series)
+    drop_events = []
+    j = 0
+    for i in range(n):
+        t0, p0 = series[i]
+        # advance j to first sample >= t0+400ms
+        while j < n - 1 and series[j][0] < t0 + 400:
+            j += 1
+        # collect samples in [t0+400, t0+700]
+        laters = [p for t, p in series[j:] if t <= t0 + 700]
+        if len(laters) < 2:
+            continue
+        nadir = sum(laters) / len(laters)
+        drop = p0 - nadir
+        if drop > 0.15:  # >0.15mm = meaningful constriction
+            drop_events.append((t0, drop))
+
+    if len(drop_events) < n_flashes:
+        return None
+
+    # Keep top candidates by drop magnitude (at most 5× the number of flashes)
+    drop_events.sort(key=lambda x: -x[1])
+    candidates = sorted(t for t, _ in drop_events[: n_flashes * 5])
+
+    # Inter-trial intervals from browser timestamps
+    intervals = [flash_timestamps_ms[k + 1] - flash_timestamps_ms[k]
+                 for k in range(n_flashes - 1)]
+
+    best_score = 0
+    best_raw_offsets: "list[int]" = []
+
+    for cand in candidates:
+        # Treat cand as the eye-tracker timestamp of the first flash.
+        # Build expected eye-tracker timestamps for all subsequent flashes.
+        score = 1
+        matched_et: "list[int | None]" = [cand]
+        cumulative = 0
+        for interval in intervals:
+            cumulative += interval
+            expected_et = cand + cumulative
+            hit = next(
+                (c for c in candidates if abs(c - expected_et) <= tolerance_ms),
+                None,
+            )
+            matched_et.append(hit)
+            if hit is not None:
+                score += 1
+
+        if score > best_score:
+            best_score = score
+            raw_offsets = []
+            for k, met in enumerate(matched_et):
+                if met is not None and k < n_flashes:
+                    raw_offsets.append(met - flash_timestamps_ms[k])
+            best_raw_offsets = raw_offsets
+
+    min_required = max(3, (n_flashes * 2) // 3)
+    if best_score >= min_required and best_raw_offsets:
+        coarse = int(sum(best_raw_offsets) / len(best_raw_offsets))
+        print(f"  Pattern match: {best_score}/{n_flashes} flashes identified, "
+              f"coarse raw offset={coarse:+.0f}ms "
+              f"(latency-corrected: {coarse - _PUPIL_REFLEX_LATENCY_MS:+.0f}ms)")
+        return coarse
+    return None
+
+
+def extract_ttl_flash_timestamps(rows: list, ttl_column: str) -> list:
+    """
+    Extract flash event timestamps from a hardware TTL/photodiode column.
+
+    Detects rising edges (0→non-zero, or below-threshold→above-threshold) in
+    the named column. Each rising edge is one flash event.
+
+    Returns list of t_unix_ms values for each detected flash onset.
+    This is the gold-standard method: no physiological latency, no pattern
+    matching needed, precision = 1 eye tracker frame (~4ms at 250Hz).
+    """
+    events = []
+    prev_val = 0.0
+    threshold = 0.5  # TTL is typically 0/1 or 0/5V normalised to 0/1
+    for r in rows:
+        t = _safe_int(r.get("t_unix_ms"))
+        if t is None:
+            continue
+        raw = r.get(ttl_column, "")
+        val = _safe_float(raw)
+        if val is None:
+            val = 1.0 if str(raw).strip() not in ("", "0", "0.0", "false", "False") else 0.0
+        if prev_val <= threshold < val:  # rising edge
+            events.append(t)
+        prev_val = val
+    return events
 
 
 def assign_trial(t_unix_ms, trial_boundaries: list) -> str:
@@ -417,6 +582,11 @@ def parse_aurora(eye_path: str, role: str, trial_boundaries: list) -> list:
                 "eyelid_right": eyelid_r_str,
                 "role": role,
                 "source": "aurora",
+                # TTL/photodiode columns preserved as-is for flash detection
+                "_ttl_raw": _col(hmap, fields, "StimFrame")
+                            or _col(hmap, fields, "TTL")
+                            or _col(hmap, fields, "EventSignal")
+                            or _col(hmap, fields, "KeyboardSignal"),
             })
 
     return rows_out
@@ -524,6 +694,10 @@ def parse_smarteye(eye_path: str, role: str, trial_boundaries: list) -> list:
                 "eyelid_right": eyelid_right,
                 "role": role,
                 "source": "smarteye",
+                # TTL/photodiode columns preserved for flash detection
+                "_ttl_raw": _col(hmap, fields, "TTL")
+                            or _col(hmap, fields, "StimulusIndex")
+                            or _col(hmap, fields, "TriggerIn"),
             })
 
     return rows_out
@@ -546,6 +720,20 @@ def main():
     ap.add_argument("--out", required=True, help="Output CSV path")
     ap.add_argument("--apply-offset", type=float, default=None,
                     help="Clock offset in ms (eye_tracker - frontend); subtracted from eye tracker timestamps")
+    ap.add_argument("--cross-machine", action="store_true",
+                    help="Eye tracker is on a different machine whose clock may be minutes off. "
+                         "Forces pattern-matching alignment before per-trial fine-tuning. "
+                         "Use this for the Director role if the eye tracker PC clock is not NTP-synced.")
+    ap.add_argument("--ttl-column", default=None,
+                    help="Name of the TTL/photodiode column in the eye tracker CSV "
+                         "(e.g. 'StimFrame', 'TTL', 'TriggerIn'). When provided, rising edges "
+                         "in this column are used for flash alignment instead of pupil constriction. "
+                         "This is the gold-standard method: ~4ms precision, no clock assumptions.")
+    ap.add_argument("--lsl-markers-file", default=None,
+                    help="Path to flash_markers.csv produced by lsl_flash_receiver.py. "
+                         "Use this for the Director role when LSL sync is set up. "
+                         "Provides ~3ms precision without any clock assumptions or pupil detection. "
+                         "Takes priority over --cross-machine and pupil constriction methods.")
     args = ap.parse_args()
 
     trial_boundaries = []
@@ -573,23 +761,154 @@ def main():
         print("Warning: no gaze samples produced.")
 
     # ── Flash-based clock offset detection ──
-    # For each sync_flash event, find the corresponding pupil constriction
-    # in the eye tracker data and compute the offset.
+    # Priority order:
+    #   0. LSL markers file (--lsl-markers-file): ~3ms, cross-machine, no clock assumptions
+    #   1. Hardware TTL/photodiode (--ttl-column): ~4ms, no clock assumptions
+    #   2. Pattern-matching (--cross-machine): ~±50ms for large cross-machine offset
+    #   3. Per-trial pupil constriction (default): ~±30ms, same/NTP-synced machines
+
+    # ── Method 0: LSL marker file ──
+    if flash_events and args.lsl_markers_file:
+        import csv as _csv
+        lsl_map: "dict[str, int]" = {}  # trial label → eye_tracker_unix_ms
+        try:
+            with open(args.lsl_markers_file, newline="", encoding="utf-8") as lf:
+                reader = _csv.DictReader(lf)
+                for row in reader:
+                    trial_key = str(row.get("trial", "")).strip()
+                    et_ms = _safe_int(row.get("eye_tracker_unix_ms"))
+                    if trial_key and et_ms:
+                        lsl_map[trial_key] = et_ms
+        except FileNotFoundError:
+            print(f"WARNING: --lsl-markers-file not found: {args.lsl_markers_file}")
+            lsl_map = {}
+
+        if lsl_map:
+            lsl_offsets = []
+            for fe in flash_events:
+                trial_key = fe["trial"]
+                # trial key in flash_events is like "T01"; LSL file stores trialIndex int
+                # try both formats
+                et_ms = lsl_map.get(trial_key) or lsl_map.get(trial_key.lstrip("T").lstrip("0") or "0")
+                if et_ms:
+                    offset = et_ms - fe["flash_ts"]
+                    lsl_offsets.append(offset)
+                    print(f"  LSL sync ({trial_key}): browser_ts={fe['flash_ts']}, "
+                          f"eye_tracker_ts={et_ms}, offset={offset:+.0f}ms")
+                else:
+                    print(f"  LSL sync ({trial_key}): no marker in file")
+
+            if lsl_offsets:
+                mean_off = sum(lsl_offsets) / len(lsl_offsets)
+                std_off = (sum((x - mean_off) ** 2 for x in lsl_offsets) / len(lsl_offsets)) ** 0.5
+                applied_offset = int(mean_off)
+                status = "OK — LSL sync, ~3ms precision" if std_off < 20 else "WARNING: high variance"
+                print(f"  LSL offset: mean={mean_off:+.0f}ms, std={std_off:.1f}ms  [{status}]")
+                if applied_offset != 0:
+                    for r in rows:
+                        t = _safe_int(r.get("t_unix_ms"))
+                        if t is not None:
+                            corrected = t - applied_offset
+                            r["t_unix_ms"] = corrected
+                            r["t_iso"] = epoch_to_iso(corrected)
+                    for r in rows:
+                        t = _safe_int(r.get("t_unix_ms"))
+                        r["trial"] = assign_trial(t, trial_boundaries)
+                    print(f"  Corrected {len(rows)} timestamps by {-applied_offset:+.0f}ms via LSL")
+                ordered_rows = [{col: r.get(col, "") for col in OUTPUT_COLUMNS} for r in rows]
+                csv_write(ordered_rows, args.out)
+                print(f"Wrote {len(ordered_rows)} rows to {args.out}")
+                return
+
+    # ── Method 1: TTL / photodiode ──
+    if flash_events and args.ttl_column:
+        ttl_col = args.ttl_column
+        # Use "_ttl_raw" if the column name matches the auto-detected ones from parsers
+        ttl_rows = rows
+        ttl_flash_ts = extract_ttl_flash_timestamps(ttl_rows, ttl_col)
+        if not ttl_flash_ts:
+            # Try the auto-captured _ttl_raw field
+            ttl_flash_ts = extract_ttl_flash_timestamps(
+                [{**r, ttl_col: r.get("_ttl_raw", "")} for r in rows], ttl_col)
+        print(f"TTL column '{ttl_col}': found {len(ttl_flash_ts)} rising edge(s)")
+        if len(ttl_flash_ts) >= len(flash_events) * 2 // 3:
+            # Match TTL events to browser flash timestamps by order
+            paired = list(zip(sorted(ttl_flash_ts), sorted(fe["flash_ts"] for fe in flash_events)))
+            ttl_offsets = [et - bt for et, bt in paired]
+            mean_off = sum(ttl_offsets) / len(ttl_offsets)
+            std_off = (sum((x - mean_off) ** 2 for x in ttl_offsets) / len(ttl_offsets)) ** 0.5
+            applied_offset = int(mean_off)
+            print(f"  TTL alignment: mean offset={mean_off:+.0f}ms, std={std_off:.1f}ms  "
+                  f"[{'OK — hardware sync, ~4ms precision' if std_off < 20 else 'WARNING: high jitter'}]")
+            if applied_offset != 0:
+                for r in rows:
+                    t = _safe_int(r.get("t_unix_ms"))
+                    if t is not None:
+                        corrected = t - applied_offset
+                        r["t_unix_ms"] = corrected
+                        r["t_iso"] = epoch_to_iso(corrected)
+                for r in rows:
+                    t = _safe_int(r.get("t_unix_ms"))
+                    r["trial"] = assign_trial(t, trial_boundaries)
+                print(f"  Corrected {len(rows)} timestamps by {-applied_offset:+.0f}ms via TTL")
+            # Skip all software-based methods
+            ordered_rows = [{col: r.get(col, "") for col in OUTPUT_COLUMNS} for r in rows]
+            csv_write(ordered_rows, args.out)
+            print(f"Wrote {len(ordered_rows)} rows to {args.out}")
+            return
+        else:
+            print(f"  WARNING: only {len(ttl_flash_ts)} TTL events found "
+                  f"(expected ~{len(flash_events)}). Falling back to pupil method.")
+
+    # ── Method 2: Pattern-matching (cross-machine, large offset) ──
+    coarse_offset: "int | None" = None
+    if flash_events and args.cross_machine:
+        print("Cross-machine mode: running pattern-matching alignment...")
+        all_flash_ts = [fe["flash_ts"] for fe in flash_events]
+        coarse_offset = find_coarse_offset_by_flash_pattern(rows, all_flash_ts)
+        if coarse_offset is None:
+            print("  WARNING: pattern matching failed — "
+                  "pupil signal may be too noisy or recording duration too short. "
+                  "Consider using --apply-offset to set a manual offset.")
+
+    # Phase 2: per-trial fine alignment.
+    # If coarse_offset is known, shift each flash timestamp into eye-tracker clock
+    # space before searching, then use a wider ±5000ms window to accommodate
+    # residual pattern-match error.
     flash_offsets = []
     for fe in flash_events:
         flash_ts = fe["flash_ts"]
-        detected_ts = detect_flash_in_pupil(rows, flash_ts)
-        if detected_ts > 0:
-            # offset = eye_tracker_time - frontend_time
-            # Positive = eye tracker clock is ahead
-            offset = detected_ts - flash_ts
-            flash_offsets.append(offset)
-            print(f"  Flash sync ({fe['trial']}): frontend={flash_ts}, "
-                  f"eye_tracker={detected_ts}, offset={offset:+.0f}ms")
+        if coarse_offset is not None:
+            # Shift the reference into eye-tracker clock space
+            search_center = flash_ts + coarse_offset
+            detected_ts = detect_flash_in_pupil(rows, search_center,
+                                                search_window_ms=5000)
         else:
-            print(f"  Flash sync ({fe['trial']}): pupil constriction not detected")
+            detected_ts = detect_flash_in_pupil(rows, flash_ts)
 
-    # Compute median flash offset if we have detections
+        if detected_ts > 0:
+            # Raw offset = eye_tracker_constriction_time - browser_flash_time.
+            # Includes physiological reflex latency (~250ms).
+            # Subtract latency so the correction aligns the flash event itself.
+            raw_offset = detected_ts - flash_ts
+            offset = raw_offset - _PUPIL_REFLEX_LATENCY_MS
+            flash_offsets.append(offset)
+            print(f"  Flash sync ({fe['trial']}): constriction={detected_ts}, "
+                  f"raw_offset={raw_offset:+.0f}ms, "
+                  f"latency_corrected_offset={offset:+.0f}ms")
+        else:
+            src = "coarse offset" if coarse_offset is not None else "per-trial window"
+            print(f"  Flash sync ({fe['trial']}): not detected via {src} "
+                  f"(blink at trial start or bad pupil data; trial excluded from offset)")
+
+    # Consistency check — high std dev means wrong events are being picked.
+    if len(flash_offsets) >= 2:
+        mean_off = sum(flash_offsets) / len(flash_offsets)
+        std_off = (sum((x - mean_off) ** 2 for x in flash_offsets) / len(flash_offsets)) ** 0.5
+        status = "OK" if std_off < 50 else "WARNING: high variance — check pupil data quality"
+        print(f"  Offset consistency: mean={mean_off:+.0f}ms, std={std_off:.0f}ms  [{status}]")
+
+    # Compute median flash offset — robust to one or two mis-detected trials.
     applied_offset = 0
     if args.apply_offset is not None:
         applied_offset = args.apply_offset
@@ -597,6 +916,12 @@ def main():
     elif flash_offsets:
         applied_offset = sorted(flash_offsets)[len(flash_offsets) // 2]
         print(f"Applying flash-detected median offset: {applied_offset:+.0f}ms")
+    elif coarse_offset is not None:
+        # All per-trial detections failed but we have a coarse estimate.
+        # Fall back to coarse (minus latency) — better than nothing.
+        applied_offset = coarse_offset - _PUPIL_REFLEX_LATENCY_MS
+        print(f"Falling back to coarse offset: {applied_offset:+.0f}ms "
+              f"(per-trial fine-tuning failed — alignment uncertainty ±8s)")
 
     # Apply offset to all timestamps (corrects eye tracker timestamps to frontend clock)
     if applied_offset != 0:

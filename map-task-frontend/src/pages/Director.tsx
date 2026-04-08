@@ -19,6 +19,7 @@ import MicCheckWidget from '../components/MicCheckWidget';
 import type { EventRecord } from '../types';
 
 import { getMapSrc } from '../utils/mapAssets';
+import { initLslBridge, sendFlashToLsl } from '../services/lslBridge';
 
 function rid(len = 8) { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; return Array.from({ length: len }, () => c[Math.floor(Math.random() * c.length)]).join(''); }
 function mapNumberFallback(mapSet: 1 | 2, trialIndex: number) { return (mapSet === 1 ? 0 : 8) + (trialIndex - 1); }
@@ -234,6 +235,7 @@ export default function Director() {
     setTrial(activeTrialRef.current, state.durationSec);
 
     if (state.sessionId && state.participantId) {
+      initLslBridge(state.sessionId);
       channelRef.current = joinSession(state.sessionId, 'director');
 
       channelRef.current?.on('broadcast', { event: 'start' }, ({ payload }) => handleStart(payload));
@@ -463,7 +465,10 @@ export default function Director() {
       </div>
       <SyncFlash
         startAt={startAt}
-        onFlash={(ts) => log('sync_flash', { flashTs: ts, trialIndex: activeTrialRef.current }, 'director')}
+        onFlash={(ts) => {
+          log('sync_flash', { flashTs: ts, trialIndex: activeTrialRef.current }, 'director');
+          sendFlashToLsl(activeTrialRef.current, ts);
+        }}
       />
       <TrialSuccessForm open={showTrialSuccess} onClose={() => setShowTrialSuccess(false)} onSubmit={onTrialSuccessSubmit} trialIndex={activeTrialRef.current} />
       <TLXForm open={showTLX} onClose={() => setShowTLX(false)} onSubmit={onTLXSubmit} />
